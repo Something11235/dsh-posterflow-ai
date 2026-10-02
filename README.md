@@ -187,11 +187,23 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
 
 ## 维护者：发布到 npm
 
+**0. 首次：先有 npm 账号**（只需一次）
+
+1. 打开 https://www.npmjs.com/signup 注册（用户名会**公开**显示为发布者，建议与 GitHub 同名；
+   邮箱必须能收信，发布前要验证）
+2. 建议顺手开 **2FA**（Authenticator App）：npm 发布时会要求输入 6 位动态码，
+   不开也常会被要求邮箱一次性验证码
+3. 回到终端登录（会打开浏览器授权）：
+
 ```powershell
 cd 'D:\Projects\DSH工作台\插件制作\dsh-posterflow-ai'
 npm login        # 首次登录；本目录的 .npmrc 已把机器上的失效代理置空，registry 直连
 npm publish      # prepublishOnly 会先跑七道门（嵌入校验/类型/lint/测试/构建/产物/被包契约），全绿才上传
 ```
+
+> 包名 `dsh-posterflow-ai` 是**无 scope** 的，直接发到你的账号下；发布前可用
+> `npm view dsh-posterflow-ai version` 确认没被占用（返回 `E404` 就是空的）。
+> 若终端报 `ECONNREFUSED 127.0.0.1:65532`，先 `npm config delete proxy; npm config delete https-proxy`。
 
 发布后任何人（**包括没装 git 的机器**）在「设置 → 插件 → 添加插件」里只输 `dsh-posterflow-ai`
 即可安装：不需要 git、不需要 Node、不需要编译。

@@ -194,11 +194,23 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
 
 ## Maintainer: publishing to npm
 
+**0. First time: you need an npm account** (once only)
+
+1. Register at https://www.npmjs.com/signup — the username is **public** (it shows as the publisher),
+   so matching your GitHub handle is a good idea; the email must be verifiable.
+2. Consider enabling **2FA** (authenticator app): npm asks for a 6-digit code when publishing, and even
+   without 2FA it usually asks for a one-time code by email.
+3. Log in from the terminal (opens a browser to authorise):
+
 ```powershell
 cd 'D:\Projects\DSH工作台\插件制作\dsh-posterflow-ai'
 npm login        # first time; the local .npmrc neutralises the dead proxy so the registry is reachable
 npm publish      # prepublishOnly runs all seven gates first; nothing is uploaded unless they pass
 ```
+
+> The name `dsh-posterflow-ai` is **unscoped**, so it publishes straight to your account. Check that it is
+> free with `npm view dsh-posterflow-ai version` (`E404` means free). If the terminal reports
+> `ECONNREFUSED 127.0.0.1:65532`, run `npm config delete proxy; npm config delete https-proxy`.
 
 After publishing, anyone — **including machines without git** — installs by typing `dsh-posterflow-ai`
 in *Settings → Plugins → Add plugin*: no git, no Node, no build.
