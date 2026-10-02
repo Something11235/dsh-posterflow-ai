@@ -5,12 +5,17 @@
  * `client.ts` 必须是"执行即注册工厂"的脚本形态，没法被测试导入。
  * 抽成模块后：① 注册契约、闸门、开窗逻辑可单测；② 构建时会 inline 进 `lib/client.js`。
  *
- * 两个踩坑后的关键设计：
- *  - **视频内联**：桌面版 GUI（19387）不是 `ctx.webServer` 的路由面（实测连 `/plugins/...` 都 404），
- *    走路由必然播不出视频，所以把视频做成 data URI 带在产物里。
- *  - **开窗不能用 noopener**：`window.open(url, '_blank', 'noopener,...')` 按规范**必返回 null**，
- *    会被"被拦截就降级"的逻辑误判，于是新标签页 + 当前页各开一次 = 打开两个。
- *    改为具名窗口（重复打开复用同一标签）+ 手动把 opener 置空。
+ * 三个踩坑后的关键设计（都来自本机实测）：
+ *  1. **视频内联**：桌面版 GUI（19387）不是 `ctx.webServer` 的路由面（连内核自己的 `/plugins/...` 都 404），
+ *     走路由必然播不出视频，所以把视频做成 data URI 带在产物里。
+ *  2. **开窗绝不用返回值判断"被拦截"**：DSH 桌面版的 Electron 主进程里，
+ *     `setWindowOpenHandler` 永远返回 `{action:'deny'}` 并且顺手 `shell.openExternal(url)`——
+ *     于是任何 `window.open` 都返回 `null`，但网站**已经被宿主用系统浏览器打开了一次**。
+ *     老代码把 `null` 当"被拦"又对当前页 `location.assign()`，于是新标签页 + 当前页各打开一次。
+ *     现在返回 `blocked` 时**不导航**，只让面板提示用户点手动链接。
+ *  3. **去重窗口要跨挂载**：React 严格模式 / slot 重注册都可能导致面板重新挂载，
+ *     而重新挂载时 `useEffect` 会再跑一次。旧的 1.5 秒窗口挡不住"间隔几秒的重挂载"，
+ *     所以去重窗口放大到 `LAUNCH_DEDUPE_MS`，并且状态放在**模块级共享**的 launcher 里。
  */
 import { TRANSITION_VIDEO_BYTES, TRANSITION_VIDEO_DATA_URI } from './generated/transition-video.js'
 
@@ -44,14 +49,17 @@ export const DEFAULTS: ClientConfig = {
   transition: 'video',
   videoSource: 'inline',
   videoUrl: '',
-  muted: false, // 默认**带声音**；被自动播放策略拦下时才降级静音并给「开启声音」按钮
+  muted: false, // 默认带声音；被自动播放策略拒绝时才降级静音并给「开启声音」按钮
   maxWaitMs: 8000,
 }
 
-/** 单次触发闸门的时间窗：这段时间内的重复触发一律忽略。 */
-export const LAUNCH_DEBOUNCE_MS = 1500
+/**
+ * 去重窗口：这段时间内的重复触发一律忽略。
+ * 必须显著大于视频时长，否则"面板重新挂载"会在视频播完后再次触发一次跳转。
+ */
+export const LAUNCH_DEDUPE_MS = 20_000
 
-/** 具名窗口：同名标签页会被复用，从浏览器层面杜绝"开两个"。 */
+/** 具名窗口：普通浏览器里同名标签页会被复用（DSH 桌面版因为宿主 deny 而不适用）。 */
 export const WINDOW_NAME = 'posterflow-ai-launch'
 
 /** 侧栏主列表那一行的 id，同时也是 `main` 面板的 key。 */
@@ -62,6 +70,33 @@ export const SLOT_PANEL_LIST = 'sidebar.panellist'
 export const SLOT_MAIN = 'main'
 /** 排在最后一行：既有的 plugins = 0、schedules = 10。 */
 export const PANEL_ORDER = 100
+
+/**
+ * 诊断计数。用途是把"到底哪一层被跑了两次"变成用户能直接读到的数字：
+ * 面板上会显示 触发/apply/effect/渲染 各自的次数，一眼就能区分
+ * 「apply 两次」「Panel 渲染两次」「effect 跑两次」「launch 被放行两次」。
+ */
+export interface Diagnostics {
+  applies: number
+  panelRenders: number
+  effects: number
+  launches: number
+  opens: number
+  blocked: number
+}
+
+/** 模块级诊断计数（生产环境跨挂载累计）。 */
+export const diagnostics: Diagnostics = { applies: 0, panelRenders: 0, effects: 0, launches: 0, opens: 0, blocked: 0 }
+
+/** 重置诊断计数（测试用）。 */
+export function resetDiagnostics(): void {
+  diagnostics.applies = 0
+  diagnostics.panelRenders = 0
+  diagnostics.effects = 0
+  diagnostics.launches = 0
+  diagnostics.opens = 0
+  diagnostics.blocked = 0
+}
 
 export interface SlotRegisterOptions {
   name: string
@@ -88,46 +123,66 @@ export interface PanelPlugin {
   apply(ctx: ClientContext): void
 }
 
+/** 一次跳转尝试的结果。 */
+export interface OpenOutcome {
+  /** `opened` = 拿到了窗口句柄；`blocked` = 宿主/浏览器拦下；`same-tab` = 当前页导航。 */
+  kind: 'opened' | 'blocked' | 'same-tab'
+  /** 是否拿到窗口句柄。DSH 桌面版**永远**是 false（宿主 deny + openExternal）。 */
+  handleReturned: boolean
+}
+
 /** 副作用实现，可在 Node 里替换以便单测。 */
 export interface LaunchRuntime {
   loadConfig: () => Promise<ClientConfig>
   playTransition: (config: ClientConfig) => Promise<void>
-  openTarget: (config: ClientConfig) => void
-  /** 可注入的时钟，便于测闸门。 */
+  openTarget: (config: ClientConfig) => OpenOutcome
+  /** 可注入的时钟，便于测去重窗口。 */
   now?: () => number
 }
 
-/** 一次「过场 → 跳转」的编排，带单次触发闸门。 */
+/** 一次 launch 的结果。 */
+export interface LaunchOutcome {
+  /** 是否真的执行了（false = 被闸门挡下）。 */
+  ran: boolean
+  /** 被挡下的原因。 */
+  reason?: 'in-flight' | 'deduped'
+  /** 执行时的跳转结果。 */
+  open?: OpenOutcome
+}
+
+/** 一次「过场 → 跳转」的编排。 */
 export interface Launcher {
-  launch(): Promise<void>
+  launch(): Promise<LaunchOutcome>
   running(): boolean
 }
 
 /**
- * 创建编排器。
- *
- * 为什么要闸门：React 严格模式下 effect 会跑两次，侧栏那一行的点击也可能被重复派发；
- * 没有闸门就会**播两遍视频**。闸门放在闭包里，组件重新挂载也拦得住。
+ * 创建编排器（去重 + 进行中闸门）。
  *
  * @param runtime - 副作用实现（可注入替身）。
  * @returns 编排器。
  */
 export function createLauncher(runtime: LaunchRuntime): Launcher {
   const now = runtime.now ?? ((): number => Date.now())
-  let lastLaunchAt = Number.NEGATIVE_INFINITY
+  let lastRanAt = Number.NEGATIVE_INFINITY
   let inFlight = false
 
   return {
     running: () => inFlight,
-    async launch(): Promise<void> {
+    async launch(): Promise<LaunchOutcome> {
       const at = now()
-      if (inFlight || at - lastLaunchAt < LAUNCH_DEBOUNCE_MS) return
+      if (inFlight) return { ran: false, reason: 'in-flight' }
+      if (at - lastRanAt < LAUNCH_DEDUPE_MS) return { ran: false, reason: 'deduped' }
       inFlight = true
-      lastLaunchAt = at
+      lastRanAt = at
+      diagnostics.launches += 1
       try {
         const config = await runtime.loadConfig()
         if (config.transition === 'video') await runtime.playTransition(config)
-        runtime.openTarget(config)
+        diagnostics.opens += 1
+        const open = runtime.openTarget(config)
+        if (open.kind === 'blocked') diagnostics.blocked += 1
+        return { ran: true, open }
       } finally {
         inFlight = false
       }
@@ -144,28 +199,34 @@ export interface WindowLike {
 /**
  * 创建「跳转」实现。
  *
- * 这里的坑必须记住：**`window.open(url, '_blank', 'noopener,...')` 一定返回 `null`**（规范如此），
- * 所以不能把 `null` 当成"被拦截"。老代码正是因此又走了一次 `location.assign`，
- * 于是新标签页与当前页各打开一次。现在改为：
- *   ① 只用**具名窗口**（同名会复用，天然不会重复开）；
- *   ② 不传 noopener，而是打开后手动把 `opener` 置空（安全性等价）；
- *   ③ 只有真的返回 null（弹窗被拦）才降级到当前页跳转。
+ * **关键：`null` 不是"失败"，也不该降级导航。** 在 DSH 桌面版里，
+ * Electron 主进程对任何 `window.open` 都返回 `deny` 并顺手 `shell.openExternal(url)`，
+ * 所以这里必然拿到 `null`，而网站**已经被打开过一次**。此时若再 `location.assign()`，
+ * 就会出现"打开两次"（新标签页 + 当前页）。
+ *
+ * 因此：`new-tab` 路径**只调用一次 `window.open`**，拿到 `null` 就返回 `blocked`，
+ * 由面板提示用户点手动链接；只有显式的 `same-tab` 配置才会导航当前页。
  *
  * @param win - 窗口对象（默认 `window`）。
  * @returns 跳转函数。
  */
-export function createOpenTarget(win: WindowLike): (config: ClientConfig) => void {
-  return (config: ClientConfig): void => {
+export function createOpenTarget(win: WindowLike): (config: ClientConfig) => OpenOutcome {
+  return (config: ClientConfig): OpenOutcome => {
     if (config.openIn === 'same-tab') {
       win.location.assign(config.targetUrl)
-      return
+      return { kind: 'same-tab', handleReturned: false }
     }
-    const opened = win.open(config.targetUrl, WINDOW_NAME) as { opener?: unknown; focus?: () => void } | null | undefined
+
+    const opened = win.open(config.targetUrl, WINDOW_NAME) as
+      | { opener?: unknown; focus?: () => void }
+      | null
+      | undefined
+
     if (opened === null || opened === undefined) {
-      // 真正的拦截才降级
-      win.location.assign(config.targetUrl)
-      return
+      // 不导航！宿主很可能已经打开过了（见函数注释）
+      return { kind: 'blocked', handleReturned: false }
     }
+
     try {
       opened.opener = null
     } catch {
@@ -176,6 +237,7 @@ export function createOpenTarget(win: WindowLike): (config: ClientConfig) => voi
     } catch {
       /* 忽略 */
     }
+    return { kind: 'opened', handleReturned: true }
   }
 }
 
@@ -212,7 +274,7 @@ declare const document: {
   body: DomNode
 }
 
-/** 生产环境共享同一个编排器：即使模块被多次实例化，闸门也只认一份状态。 */
+/** 生产环境共享同一个编排器：跨挂载/跨注册都只认一份去重状态。 */
 let sharedLauncher: Launcher | undefined
 
 /**
@@ -249,9 +311,8 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
   /**
    * 播放过场视频，**铺满整个窗口**。
    *
-   * 声音策略：先按配置尝试（默认 `muted: false`，即有声音）。若被自动播放策略拒绝，
-   * 退化为静音起播——**并在右上角给一个「开启声音」按钮**（那一下是用户手势，必定能取消静音）。
-   *
+   * 声音策略：先按配置尝试（默认 `muted: false`）。被自动播放策略拒绝时退化为静音起播，
+   * 并在右上角给一个「开启声音」按钮（那一下是用户手势，必定能取消静音）。
    * 结束 / 出错 / 超时 / 点击画面都会立刻放行。
    */
   const playTransition =
@@ -280,7 +341,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           resolve()
         }
 
-        /** 右上角的小按钮：被策略静音时用来开启声音，无法开启时当作"跳过"。 */
+        /** 右上角小按钮：被策略静音时用来开启声音。 */
         const makeSoundButton = (): DomNode => {
           const button = document.createElement('button')
           button.textContent = '🔊 开启声音'
@@ -369,8 +430,9 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
     ...(runtime.now === undefined ? {} : { now: runtime.now }),
   }
 
-  // 单测注入替身时每次新建闸门（用例之间互不影响）；生产环境全模块共享一份。
-  const injected = runtime.loadConfig !== undefined || runtime.playTransition !== undefined || runtime.openTarget !== undefined
+  // 单测注入替身时每次新建（用例之间互不影响）；生产环境全模块共享一份。
+  const injected =
+    runtime.loadConfig !== undefined || runtime.playTransition !== undefined || runtime.openTarget !== undefined
   const launcher = injected ? createLauncher(builtRuntime) : (sharedLauncher ??= createLauncher(builtRuntime))
 
   /**
@@ -403,15 +465,36 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
     )
   }
 
-  /** 主面板：挂载即启动编排（闸门保证只跑一次）。 */
+  /** 主面板：挂载即启动编排（共享闸门保证一次点击只跑一次）。 */
   const Panel = (): unknown => {
+    diagnostics.panelRenders += 1
     const [phase, setPhase] = React.useState<'running' | 'done'>('running')
+    const [note, setNote] = React.useState('正在播放过场…')
     const started = React.useRef(false)
 
     React.useEffect(() => {
+      diagnostics.effects += 1
       if (started.current) return
       started.current = true
-      void launcher.launch().then(() => setPhase('done'))
+      void launcher.launch().then((outcome) => {
+        if (!outcome.ran) {
+          setNote(
+            outcome.reason === 'deduped'
+              ? `刚刚已经触发过（${Math.round(LAUNCH_DEDUPE_MS / 1000)} 秒内不会重复打开）`
+              : '正在触发中…',
+          )
+          setPhase('done')
+          return
+        }
+        if (outcome.open?.kind === 'blocked') {
+          setNote('宿主要求的新窗口被拦下了，请点下面的手动链接')
+        } else if (outcome.open?.kind === 'same-tab') {
+          setNote('已跳转')
+        } else {
+          setNote('已打开 PosterFlow')
+        }
+        setPhase('done')
+      })
     }, [])
 
     const link = React.createElement(
@@ -425,6 +508,9 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       },
       '手动打开 PosterFlow',
     )
+
+    // 诊断行：一眼看出是哪一层重复执行
+    const diag = `触发 ${diagnostics.launches} · apply ${diagnostics.applies} · effect ${diagnostics.effects} · 渲染 ${diagnostics.panelRenders} · 被拦 ${diagnostics.blocked}`
 
     return React.createElement(
       'div',
@@ -446,12 +532,15 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         { key: 'title', style: { fontSize: '15px', color: 'var(--dsw-alias-label-primary)' } },
         phase === 'running' ? '🖼 开启生图模式' : '🖼 已开启',
       ),
-      React.createElement('div', { key: 'message' }, phase === 'running' ? '正在播放过场…' : '已打开 PosterFlow'),
+      React.createElement('div', { key: 'note' }, note),
       link,
+      React.createElement('div', { key: 'diag', style: { marginTop: '6px', fontSize: '11px', opacity: '0.65' } }, diag),
     )
   }
 
   const apply = (ctx: ClientContext): void => {
+    diagnostics.applies += 1
+
     // ① 侧栏主列表最后一行（label 用函数形式，投影时求值）
     ctx.slots.inject(SLOT_PANEL_LIST, () =>
       ctx.slots.register(

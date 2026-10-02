@@ -93,16 +93,18 @@ dsh --profile plugindev --dump-config | grep -A10 'dsh-posterflow-ai'
    再由 [`scripts/embed-video.mjs`](scripts/embed-video.mjs) 生成 data URI 内联进 `lib/client.js`（产物约 **659 KB**）。
    换来的是**一定能播**：不依赖端口、协议、CORS 或路由。
 3. **过场铺满整个窗口。** 覆盖层 `position: fixed; inset: 0` + 视频 `width/height: 100%`、`object-fit: cover`，
-   所以是整窗填充而不是居中带黑边的信箱式播放。先静音起播（自动播放的唯一可靠保证），
-   配置要求有声时等 `playing` 之后再取消静音。
-4. **一次点击只跑一次，而且只开一个标签页。** 两个坑叠在一起：
-   一是 React 严格模式会重复执行 effect、点击也可能被重复派发，没有闸门就会播两遍视频
-   （`createLauncher()` 用 1.5 秒窗口 + 进行中标志去重）；
-   二是 **`window.open(url, '_blank', 'noopener,...')` 按规范必定返回 `null`**，老代码把 `null` 当成
-   "被拦截"又对当前页 `location.assign()`，于是**新标签页与当前页各开一次**。
-   现在改用**具名窗口**（同名标签页由浏览器自动复用）并在打开后手动把 `opener` 置空，
-   只有真的被拦下才降级到当前页跳转。两处都有测试：
-   [`tests/launcher.test.ts`](tests/launcher.test.ts)、[`tests/open-target.test.ts`](tests/open-target.test.ts)。
+   所以是整窗填充而不是居中带黑边的信箱式播放。默认**带声音**起播；被自动播放策略拒绝时才降级静音，
+   并在右上角给出「开启声音」按钮（那一下是用户手势，必定能取消静音）。
+4. **一次点击只跑一次，而且只开一个标签页。** 这条踩了两轮坑，最终结论：
+   - **DSH 桌面版的 Electron 主进程对任何 `window.open` 都返回 `deny`，并顺手 `shell.openExternal(url)`**
+     （见 `app.asar/lib/main.js`）。所以桌面版里 `window.open` **必然返回 `null`**，而网站**已经被宿主用系统浏览器打开过一次**。
+     老代码把 `null` 当"被拦截"又对当前页 `location.assign()` → 新标签页与当前页各打开一次。
+     现在 `null` 只记为 `blocked`，**绝不自动导航**，改由面板提示用户点手动链接。
+   - 去重窗口从 1.5 秒放大到 **20 秒**（`LAUNCH_DEDUPE_MS`）：面板可能被重新挂载（React 严格模式 / slot 重注册），
+     而 1.5 秒挡不住"过场播完（约 6.5 秒）后再挂载一次"。
+   - `new-tab` 路径**只调用一次 `window.open`**（具名窗口 + 打开后手动把 `opener` 置空）。
+   另外面板底部会显示诊断计数（`触发 / apply / effect / 渲染 / 被拦`）——以后再出"打开两次"，一眼就能看出是哪一层重复执行。
+   测试：[`tests/launcher.test.ts`](tests/launcher.test.ts)、[`tests/open-target.test.ts`](tests/open-target.test.ts)（含"返回 null 不导航"）。
 5. **client 半边读不到宿主的 `Config`**，所以宿主用 `/posterflow-ai/config.json` 把它递过去
    （`Cache-Control: no-store`）。client 侧读取失败时回落到内置默认值，而默认值就是"内联视频"，
    所以**入口永远不会因为路由不通而失灵**。
@@ -127,7 +129,7 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
 | `verify:embed` | 内联视频模块与 `assets/transition.webm` 一致（防止改了视频忘了重新生成） |
 | `typecheck` | 严格 TS，含 client 半边的惰性 CJS 形态 |
 | `lint` | oxlint（生成的视频模块已排除） |
-| `test` | **45 个用例**，五个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、编排闸门（单次触发）、开窗（只开一个标签页）、真 WebServer + 真 HTTP 请求 |
+| `test` | **49 个用例**，五个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、编排去重（20 秒窗口 / 进行中 / 诊断计数）、开窗（只开一次、`null` 不导航）、真 WebServer + 真 HTTP 请求 |
 | `build` | tsdown 产出 `lib/index.js`（ESM）+ `lib/client.js`（IIFE 普通脚本，约 659 KB） |
 | `test:artifact` | 构建产物挂真 WebServer：路由可用、卸载即撤 |
 | `test:client` | 在 Node 里执行 `lib/client.js`：执行期 **0 次模块请求、0 次 DOM 变更**（惰性契约），materialize 后导出 `name/inject/apply` |

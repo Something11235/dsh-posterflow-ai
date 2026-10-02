@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { apply as hostApply, Config, inject as hostInject, name as hostName, PANEL_ID, PANEL_ORDER, SLOT_MAIN, SLOT_PANEL_LIST, type Config as PluginConfig } from '../src/index.js'
-import { createPanelPlugin, DEFAULTS, INLINED_VIDEO_BYTES, PANEL_ID as CLIENT_PANEL_ID, type ClientConfig, type ReactLike } from '../src/panels.js'
+import { createPanelPlugin, DEFAULTS, INLINED_VIDEO_BYTES, PANEL_ID as CLIENT_PANEL_ID, type ClientConfig, type OpenOutcome, type ReactLike } from '../src/panels.js'
 import { TRANSITION_VIDEO_DATA_URI } from '../src/generated/transition-video.js'
 
 /** 记录注册行为的最小假 ctx（只实现 client 侧真正用到的面）。 */
@@ -46,7 +46,7 @@ function createFakeContext() {
 const stubRuntime = {
   loadConfig: async (): Promise<ClientConfig> => DEFAULTS,
   playTransition: async (): Promise<void> => {},
-  openTarget: (): void => {},
+  openTarget: (): OpenOutcome => ({ kind: 'opened', handleReturned: true }),
 }
 
 /** 只提供 createElement/useState/useEffect/useRef 的最小 React 替身。 */

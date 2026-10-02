@@ -92,16 +92,22 @@ Six deliberate choices:
    no CORS, no routes.
 3. **The transition fills the entire window.** The overlay is `position: fixed; inset: 0`, the video is
    `width/height: 100%` with `object-fit: cover`, so it is a full-window fill rather than letterboxed.
-   It starts muted (the only reliable autoplay guarantee) and unmutes after `playing` when configured to.
-4. **One click runs once, and only one tab opens.** Two traps stacked:
-   first, React StrictMode re-runs effects and clicks can be delivered twice, so without a gate the clip plays
-   twice (`createLauncher()` de-duplicates with a 1.5 s window plus an in-flight flag);
-   second, **`window.open(url, '_blank', 'noopener,...')` returns `null` by specification**, and the old code
-   read that as “blocked” and also ran `location.assign()` on the current page — so the new tab *and* the
-   current page each opened the site. It now uses a **named window** (the browser reuses a same-named tab) and
-   clears `opener` manually, falling back to same-page navigation only when the popup really is blocked.
-   Both are pinned by tests: [`tests/launcher.test.ts`](tests/launcher.test.ts),
-   [`tests/open-target.test.ts`](tests/open-target.test.ts).
+   It plays **with sound** by default; only when the autoplay policy refuses does it fall back to muted and
+   offer an “enable sound” button (that click is a user gesture, so unmuting always works).
+4. **One click runs once, and only one tab opens.** Two rounds of traps; the conclusion:
+   - **The DSH desktop Electron main process denies every `window.open` and calls `shell.openExternal(url)`
+     instead** (see `app.asar/lib/main.js`). So on the desktop app `window.open` **always returns `null`**,
+     while the site **has already been opened once** by the host in the system browser. The old code read
+     `null` as “blocked” and also ran `location.assign()` on the current page — one open in the new window,
+     one in the current page. `null` is now reported as `blocked` and **never navigates**; the panel points
+     the user at the manual link instead.
+   - The de-duplication window grew from 1.5 s to **20 s** (`LAUNCH_DEDUPE_MS`): the panel can be remounted
+     (React StrictMode / slot re-registration), and 1.5 s cannot cover “remounted after the ~6.5 s clip ends”.
+   - The `new-tab` path calls **`window.open` exactly once** (named window, `opener` cleared afterwards).
+   The panel also shows live diagnostic counters (`触发 / apply / effect / 渲染 / 被拦`) so any future
+   “opens twice” report immediately shows which layer ran twice.
+   Tests: [`tests/launcher.test.ts`](tests/launcher.test.ts), [`tests/open-target.test.ts`](tests/open-target.test.ts)
+   (including “returns null ⇒ no navigation”).
 5. **The client half cannot read the host's `Config`**, so the host exposes `/posterflow-ai/config.json`
    (`Cache-Control: no-store`). If the fetch fails the client falls back to built-in defaults — and the default
    is the inlined video, so **the entry never stops working because a route is unreachable**.
@@ -126,7 +132,7 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
 | `verify:embed` | The inlined video module matches `assets/transition.webm` (catches “changed the clip, forgot to regenerate”) |
 | `typecheck` | Strict TS, including the client half's lazy-CJS shape |
 | `lint` | oxlint (the generated video module is excluded) |
-| `test` | **45 cases** across five files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the launch gate (single-fire), window opening (exactly one tab), and a **real WebServer with real HTTP requests** |
+| `test` | **49 cases** across five files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), launch de-duplication (20 s window / in-flight / diagnostics), window opening (exactly once, `null` never navigates), and a **real WebServer with real HTTP requests** |
 | `build` | tsdown → `lib/index.js` (ESM) + `lib/client.js` (IIFE plain script, ≈ 659 KB) |
 | `test:artifact` | The built host artefact mounted on a real WebServer: routes answer, and vanish on dispose |
 | `test:client` | Executes the built `lib/client.js` in Node: **0 module requests and 0 DOM mutations at execution** (the lazy contract), and `name/inject/apply` after materialization |
