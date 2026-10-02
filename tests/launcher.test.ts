@@ -85,7 +85,7 @@ describe('createLauncher 去重闸门', () => {
     const first = launcher.launch()
     await h.release()
     const firstOutcome = await first
-    expect(firstOutcome).toEqual({ ran: true, open: OPENED })
+    expect(firstOutcome).toEqual({ ran: true, open: OPENED, audio: 'none' })
 
     const second = await launcher.launch()
     expect(second).toEqual({ ran: false, reason: 'deduped' })
@@ -206,5 +206,27 @@ describe('createLauncher 去重闸门', () => {
 
     expect(diagnostics.launches).toBe(1)
     expect(diagnostics.opens).toBe(1)
+  })
+
+  it('把过场的声音判定带出来（面板据此只在出问题时显示一句原因）', async () => {
+    const launcher = createLauncher({
+      now: () => 0,
+      loadConfig: async () => ({ ...DEFAULTS }),
+      playTransition: async () => ({ audio: 'muted' as const }),
+      openTarget: () => OPENED,
+    })
+
+    const outcome = await launcher.launch()
+
+    expect(outcome.audio).toBe('muted')
+  })
+
+  it('没播过场（transition: none）时 audio 记为 none，不误报"没声音"', async () => {
+    const h = makeRuntime({ transition: 'none' })
+    const launcher = createLauncher(h.runtime)
+
+    const outcome = await launcher.launch()
+
+    expect(outcome.audio).toBe('none')
   })
 })

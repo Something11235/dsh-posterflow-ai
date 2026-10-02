@@ -22,10 +22,32 @@
   打开 https://www.posterflow-ai.xyz/（默认新标签页）
 ```
 
-面板上只保留两行文字：**🖼 已开启** 与 **手动打开 PosterFlow**。诊断信息只写控制台
+面板上只保留两行文字：**生图模式已开启** 与 **手动打开 PosterFlow**。诊断信息只写控制台
 （DSH 窗口按 `Ctrl+Shift+I`，过滤 `[posterflow-ai]`），界面上不显示。
 
 ## 安装
+
+三种方式，按"对方环境"挑：
+
+| 方式 | 地址 / 命令 | 需要 `git` | 说明 |
+| --- | --- | --- | --- |
+| Git 仓库 | `github:Something11235/dsh-posterflow-ai#main` | **需要** | 当前推荐；界面里粘这个地址 |
+| npm 包名 | `dsh-posterflow-ai` | 不需要 | 需先发布到 npm（尚未发布） |
+| 本地包 | 指向本地目录 / `.tgz` | 不需要 | 内网、无 git 的机器用这个 |
+
+> **安装失败排查**
+>
+> - 报 `'git' 不是内部或外部命令`（或 `Command failed with exit code 1: git ls-remote ...`）
+>   → **那台机器没装 Git 或 Git 不在 PATH**。`pnpm add github:...` 必须调用 `git ls-remote` 解析仓库。
+>   装 [Git for Windows](https://git-scm.com/download/win) 后**完全退出 DSH 再打开**重试；
+>   或者改用 npm 包名 / 本地包安装（都不需要 git）。
+> - 报 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`
+>   → 该 git 依赖的 `package.json` 里有 `prepare` 脚本。本插件**没有** `prepare`，且 `lib/` 已随仓库提交。
+> - 界面装完按钮不出现
+>   → `dsh.client` 声明的扫描结果会缓存：必须**完全退出应用**（托盘退出）再启动。
+> - 报代理相关错误（`ECONNREFUSED 127.0.0.1:65532`）
+>   → 那是 `~/.npmrc` 里的失效代理；pnpm 不会向上层目录找 `.npmrc`，请在**profile 目录**里放一份
+>     `.npmrc`（`proxy=` / `https-proxy=`）或修掉全局代理设置。
 
 ```sh
 # 从 GitHub 安装（推荐，会被社区市场自动收录）
@@ -135,7 +157,7 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
 | `verify:embed` | 内联视频模块与 `assets/transition.webm` 一致（防止改了视频忘了重新生成） |
 | `typecheck` | 严格 TS，含 client 半边的惰性 CJS 形态 |
 | `lint` | oxlint（生成的视频模块已排除） |
-| `test` | **53 个用例**，六个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、面板 UI（只有两行）、编排去重（20 秒窗口 / 进行中 / 诊断计数）、开窗（只开一次、`null` 不导航）、真 WebServer + 真 HTTP 请求 |
+| `test` | **55 个用例**，六个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、面板 UI（只有两行）、编排去重（20 秒窗口 / 进行中 / 诊断计数 / 声音判定）、开窗（只开一次、`null` 不导航）、真 WebServer + 真 HTTP 请求 |
 | `build` | tsdown 产出 `lib/index.js`（ESM）+ `lib/client.js`（IIFE 普通脚本，约 659 KB） |
 | `test:artifact` | 构建产物挂真 WebServer：路由可用、卸载即撤 |
 | `test:client` | 在 Node 里执行 `lib/client.js`：执行期 **0 次模块请求、0 次 DOM 变更**（惰性契约），materialize 后导出 `name/inject/apply` |

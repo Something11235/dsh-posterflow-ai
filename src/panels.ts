@@ -131,10 +131,18 @@ export interface OpenOutcome {
   handleReturned: boolean
 }
 
+/** 过场播放的声音判定（只在**出问题时**由面板显示一句原因）。 */
+export type AudioVerdict = 'ok' | 'muted' | 'undecoded' | 'none'
+
+/** 过场播放结果。 */
+export interface PlayResult {
+  audio: AudioVerdict
+}
+
 /** 副作用实现，可在 Node 里替换以便单测。 */
 export interface LaunchRuntime {
   loadConfig: () => Promise<ClientConfig>
-  playTransition: (config: ClientConfig) => Promise<void>
+  playTransition: (config: ClientConfig) => Promise<PlayResult | void>
   openTarget: (config: ClientConfig) => OpenOutcome
   /** 可注入的时钟，便于测去重窗口。 */
   now?: () => number
@@ -148,6 +156,8 @@ export interface LaunchOutcome {
   reason?: 'in-flight' | 'deduped'
   /** 执行时的跳转结果。 */
   open?: OpenOutcome
+  /** 过场的声音判定（`none` = 没播过场）。 */
+  audio?: AudioVerdict
 }
 
 /** 一次「过场 → 跳转」的编排。 */
@@ -178,11 +188,11 @@ export function createLauncher(runtime: LaunchRuntime): Launcher {
       diagnostics.launches += 1
       try {
         const config = await runtime.loadConfig()
-        if (config.transition === 'video') await runtime.playTransition(config)
+        const played = config.transition === 'video' ? await runtime.playTransition(config) : undefined
         diagnostics.opens += 1
         const open = runtime.openTarget(config)
         if (open.kind === 'blocked') diagnostics.blocked += 1
-        return { ran: true, open }
+        return { ran: true, open, audio: played?.audio ?? 'none' }
       } finally {
         inFlight = false
       }
@@ -319,10 +329,11 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
    */
   const playTransition =
     runtime.playTransition ??
-    ((config: ClientConfig): Promise<void> =>
-      new Promise((resolve) => {
+    ((config: ClientConfig): Promise<PlayResult> =>
+      new Promise<PlayResult>((resolve) => {
         let settled = false
         let timer: ReturnType<typeof setTimeout> | undefined
+        let audioVerdict: AudioVerdict = 'ok'
         const overlay = document.createElement('div')
         const video = document.createElement('video') as unknown as VideoNode
 
@@ -340,7 +351,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           } catch {
             /* 已经脱离文档 */
           }
-          resolve()
+          resolve({ audio: audioVerdict })
         }
 
         const wantsSound = config.muted === false
@@ -386,12 +397,23 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           }
         }
 
-        /** 播放真正开始后若仍有声音需求，就再解除一次静音（此时文档已有用户手势）。 */
+        /**
+         * 播放真正开始后若仍有声音需求，就再解除一次静音（此时文档已有用户手势）。
+         * 顺手判定声音状态：`muted` = 解不掉静音；`undecoded` = 音轨字节数为 0（编码/解码问题）。
+         */
         video.addEventListener('playing', () => {
           if (wantsSound && video.muted) {
             video.muted = false
             video.volume = 1
           }
+          setTimeout(() => {
+            if (video.muted) {
+              audioVerdict = 'muted'
+              return
+            }
+            const decoded = (video as unknown as { webkitAudioDecodedByteCount?: number }).webkitAudioDecodedByteCount
+            if (typeof decoded === 'number' && decoded === 0) audioVerdict = 'undecoded'
+          }, 700)
         })
 
         const startPlayback = (): void => {
@@ -495,6 +517,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
    */
   const Panel = (): unknown => {
     diagnostics.panelRenders += 1
+    const [suffix, setSuffix] = React.useState('')
     const started = React.useRef(false)
 
     React.useEffect(() => {
@@ -503,6 +526,9 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       started.current = true
       void launcher.launch().then((outcome) => {
         console.log('[posterflow-ai] launch outcome', outcome, diagnostics)
+        // 只在**真的出问题**时追加一句原因；正常情况下标题就是「生图模式已开启」
+        if (outcome.audio === 'muted') setSuffix('（声音被浏览器静音了）')
+        else if (outcome.audio === 'undecoded') setSuffix('（音轨未解码）')
       })
     }, [])
 
@@ -524,7 +550,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       React.createElement(
         'div',
         { key: 'title', style: { fontSize: '15px', color: 'var(--dsw-alias-label-primary)' } },
-        '🖼 已开启',
+        `生图模式已开启${suffix}`,
       ),
       React.createElement(
         'a',

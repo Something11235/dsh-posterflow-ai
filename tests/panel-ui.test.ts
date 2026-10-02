@@ -70,10 +70,10 @@ describe('主面板 UI', () => {
     expect(tree.children.map((child) => (child as Element).props?.key)).toEqual(['title', 'manual'])
   })
 
-  it('第一行文案是「🖼 已开启」', () => {
+  it('第一行文案是「生图模式已开启」', () => {
     const title = mountPanel().children[0] as Element
 
-    expect(title.children).toEqual(['🖼 已开启'])
+    expect(title.children).toEqual(['生图模式已开启'])
   })
 
   it('第二行是打开 PosterFlow 的手动链接', () => {

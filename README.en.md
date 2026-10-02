@@ -22,10 +22,33 @@ sidebar — below 插件 / 自动化任务, as the last row
   open https://www.posterflow-ai.xyz/ (new tab by default)
 ```
 
-The panel keeps exactly two lines of text: **🖼 已开启** and **手动打开 PosterFlow**. Diagnostics go to the
+The panel keeps exactly two lines of text: **生图模式已开启** and **手动打开 PosterFlow**. Diagnostics go to the
 console only (`Ctrl+Shift+I` in the DSH window, filter `[posterflow-ai]`) and are not shown in the UI.
 
 ## Install
+
+Three ways — pick by the target machine:
+
+| Way | Address / command | Needs `git` | Notes |
+| --- | --- | --- | --- |
+| Git repo | `github:Something11235/dsh-posterflow-ai#main` | **yes** | Current recommendation; paste this into the app |
+| npm package | `dsh-posterflow-ai` | no | Requires an npm publish (not published yet) |
+| Local package | path to a local dir / `.tgz` | no | For machines without git |
+
+> **Install troubleshooting**
+>
+> - `'git' is not recognized as an internal or external command`
+>   (or `Command failed with exit code 1: git ls-remote ...`)
+>   → **that machine has no Git, or Git is not on PATH.** `pnpm add github:...` must run `git ls-remote`
+>   to resolve the repo. Install [Git for Windows](https://git-scm.com/download/win), **fully quit DSH**,
+>   reopen and retry — or use the npm / local-package route, neither of which needs git.
+> - `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`
+>   → that git dependency has a `prepare` script. This plugin has **no** `prepare`, and `lib/` is committed.
+> - The entry does not show up after installing
+>   → `dsh.client` scan results are cached: **fully quit the app** (tray → quit) and start it again.
+> - Proxy errors (`ECONNREFUSED 127.0.0.1:65532`)
+>   → a dead proxy in `~/.npmrc`; pnpm does not walk up for `.npmrc`, so put one in the **profile directory**
+>     (`proxy=` / `https-proxy=`).
 
 ```sh
 # from GitHub (also gets auto-listed by the community marketplace)
@@ -137,7 +160,7 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
 | `verify:embed` | The inlined video module matches `assets/transition.webm` (catches “changed the clip, forgot to regenerate”) |
 | `typecheck` | Strict TS, including the client half's lazy-CJS shape |
 | `lint` | oxlint (the generated video module is excluded) |
-| `test` | **53 cases** across six files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the panel UI (exactly two lines), launch de-duplication (20 s window / in-flight / diagnostics), window opening (exactly once, `null` never navigates), and a **real WebServer with real HTTP requests** |
+| `test` | **55 cases** across six files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the panel UI (exactly two lines), launch de-duplication (20 s window / in-flight / diagnostics / audio verdict), window opening (exactly once, `null` never navigates), and a **real WebServer with real HTTP requests** |
 | `build` | tsdown → `lib/index.js` (ESM) + `lib/client.js` (IIFE plain script, ≈ 659 KB) |
 | `test:artifact` | The built host artefact mounted on a real WebServer: routes answer, and vanish on dispose |
 | `test:client` | Executes the built `lib/client.js` in Node: **0 module requests and 0 DOM mutations at execution** (the lazy contract), and `name/inject/apply` after materialization |
