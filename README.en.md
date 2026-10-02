@@ -22,6 +22,9 @@ sidebar — below 插件 / 自动化任务, as the last row
   open https://www.posterflow-ai.xyz/ (new tab by default)
 ```
 
+The panel keeps exactly two lines of text: **🖼 已开启** and **手动打开 PosterFlow**. Diagnostics go to the
+console only (`Ctrl+Shift+I` in the DSH window, filter `[posterflow-ai]`) and are not shown in the UI.
+
 ## Install
 
 ```sh
@@ -92,8 +95,10 @@ Six deliberate choices:
    no CORS, no routes.
 3. **The transition fills the entire window.** The overlay is `position: fixed; inset: 0`, the video is
    `width/height: 100%` with `object-fit: cover`, so it is a full-window fill rather than letterboxed.
-   It plays **with sound** by default; only when the autoplay policy refuses does it fall back to muted and
-   offer an “enable sound” button (that click is a user gesture, so unmuting always works).
+   It plays **with sound** by default (`muted: false`). If audible autoplay is refused, it retries muted so the
+   visuals always play, and shows a bottom-centre **🔊 点击开启声音** control — that click is a user gesture, so
+   unmuting always works. The inlined clip's audio is also normalised with ffmpeg `loudnorm` to about **−15 dB**
+   (it was −25 dB, quiet enough to be mistaken for silence).
 4. **One click runs once, and only one tab opens.** Two rounds of traps; the conclusion:
    - **The DSH desktop Electron main process denies every `window.open` and calls `shell.openExternal(url)`
      instead** (see `app.asar/lib/main.js`). So on the desktop app `window.open` **always returns `null`**,
@@ -104,10 +109,10 @@ Six deliberate choices:
    - The de-duplication window grew from 1.5 s to **20 s** (`LAUNCH_DEDUPE_MS`): the panel can be remounted
      (React StrictMode / slot re-registration), and 1.5 s cannot cover “remounted after the ~6.5 s clip ends”.
    - The `new-tab` path calls **`window.open` exactly once** (named window, `opener` cleared afterwards).
-   The panel also shows live diagnostic counters (`触发 / apply / effect / 渲染 / 被拦`) so any future
-   “opens twice” report immediately shows which layer ran twice.
-   Tests: [`tests/launcher.test.ts`](tests/launcher.test.ts), [`tests/open-target.test.ts`](tests/open-target.test.ts)
-   (including “returns null ⇒ no navigation”).
+   Diagnostic counters (`触发 / apply / effect / 渲染 / 被拦`) are still maintained but go **to the console only**,
+   never to the UI. Tests: [`tests/launcher.test.ts`](tests/launcher.test.ts),
+   [`tests/open-target.test.ts`](tests/open-target.test.ts) (including “returns null ⇒ no navigation”),
+   [`tests/panel-ui.test.ts`](tests/panel-ui.test.ts) (the panel has exactly two lines).
 5. **The client half cannot read the host's `Config`**, so the host exposes `/posterflow-ai/config.json`
    (`Cache-Control: no-store`). If the fetch fails the client falls back to built-in defaults — and the default
    is the inlined video, so **the entry never stops working because a route is unreachable**.
@@ -132,7 +137,7 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
 | `verify:embed` | The inlined video module matches `assets/transition.webm` (catches “changed the clip, forgot to regenerate”) |
 | `typecheck` | Strict TS, including the client half's lazy-CJS shape |
 | `lint` | oxlint (the generated video module is excluded) |
-| `test` | **49 cases** across five files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), launch de-duplication (20 s window / in-flight / diagnostics), window opening (exactly once, `null` never navigates), and a **real WebServer with real HTTP requests** |
+| `test` | **53 cases** across six files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the panel UI (exactly two lines), launch de-duplication (20 s window / in-flight / diagnostics), window opening (exactly once, `null` never navigates), and a **real WebServer with real HTTP requests** |
 | `build` | tsdown → `lib/index.js` (ESM) + `lib/client.js` (IIFE plain script, ≈ 659 KB) |
 | `test:artifact` | The built host artefact mounted on a real WebServer: routes answer, and vanish on dispose |
 | `test:client` | Executes the built `lib/client.js` in Node: **0 module requests and 0 DOM mutations at execution** (the lazy contract), and `name/inject/apply` after materialization |

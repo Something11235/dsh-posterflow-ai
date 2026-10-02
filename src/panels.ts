@@ -258,6 +258,7 @@ interface VideoNode extends DomNode {
   src: string
   autoplay: boolean
   muted: boolean
+  volume: number
   playsInline: boolean
   play(): Promise<void> | undefined
 }
@@ -273,6 +274,7 @@ declare const document: {
   createElement(tag: string): DomNode
   body: DomNode
 }
+declare const console: { log(...args: unknown[]): void }
 
 /** 生产环境共享同一个编排器：跨挂载/跨注册都只认一份去重状态。 */
 let sharedLauncher: Launcher | undefined
@@ -341,52 +343,72 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           resolve()
         }
 
-        /** 右上角小按钮：被策略静音时用来开启声音。 */
-        const makeSoundButton = (): DomNode => {
+        const wantsSound = config.muted === false
+        let soundButton: DomNode | undefined
+
+        /**
+         * 底部居中的「开启声音」提示。
+         * 只在"带声音起播被自动播放策略拒绝"时才出现；点它是用户手势，必定能出声。
+         */
+        const showSoundButton = (): void => {
+          if (soundButton !== undefined) return
           const button = document.createElement('button')
-          button.textContent = '🔊 开启声音'
-          button.title = '点击开启声音（视频被浏览器自动播放策略静音）'
+          button.textContent = '🔊 点击开启声音'
+          button.title = '浏览器拒绝了带声音的自动播放，点这里开启'
           button.setAttribute('type', 'button')
           Object.assign(button.style, {
             position: 'absolute',
-            top: '16px',
-            right: '16px',
+            bottom: '28px',
+            left: '50%',
+            transform: 'translateX(-50%)',
             zIndex: '1',
-            padding: '6px 12px',
-            border: '1px solid rgba(255,255,255,0.35)',
+            padding: '10px 20px',
+            border: '1px solid rgba(255,255,255,0.4)',
             borderRadius: '999px',
-            background: 'rgba(0,0,0,0.45)',
+            background: 'rgba(0,0,0,0.55)',
             color: '#fff',
             font: 'inherit',
-            fontSize: '13px',
+            fontSize: '14px',
             cursor: 'pointer',
           })
           button.addEventListener('click', (event) => {
             event?.stopPropagation?.() // 别触发"点击跳过"
             video.muted = false
+            video.volume = 1
             button.remove()
+            soundButton = undefined
           })
-          return button
+          soundButton = button
+          try {
+            overlay.appendChild(button)
+          } catch {
+            /* 忽略 */
+          }
         }
+
+        /** 播放真正开始后若仍有声音需求，就再解除一次静音（此时文档已有用户手势）。 */
+        video.addEventListener('playing', () => {
+          if (wantsSound && video.muted) {
+            video.muted = false
+            video.volume = 1
+          }
+        })
 
         const startPlayback = (): void => {
           const played = video.play()
           if (played !== undefined && typeof played.catch === 'function') {
             played.catch(() => {
-              // 自动播放被拒（多半是不允许带声音）→ 静音重试，并给出开启声音的入口
+              // 带声音起播被策略拒绝 → 静音重试（保证画面一定播出来），并给出开启声音的入口
               video.muted = true
               const retry = video.play()
               if (retry !== undefined && typeof retry.catch === 'function') retry.catch(finish)
-              try {
-                overlay.appendChild(makeSoundButton())
-              } catch {
-                /* 忽略 */
-              }
+              if (wantsSound) showSoundButton()
             })
           }
         }
 
         video.muted = config.muted
+        video.volume = 1
         video.autoplay = true
         video.playsInline = true
         video.src = videoSourceFor(config)
@@ -465,11 +487,14 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
     )
   }
 
-  /** 主面板：挂载即启动编排（共享闸门保证一次点击只跑一次）。 */
+  /**
+   * 主面板：挂载即启动编排（共享闸门保证一次点击只跑一次）。
+   *
+   * UI 上**只保留两行**：标题 + 手动链接。诊断计数改为只写 `console`，
+   * 需要时在 DSH 窗口按 Ctrl+Shift+I 看 `[posterflow-ai]` 即可。
+   */
   const Panel = (): unknown => {
     diagnostics.panelRenders += 1
-    const [phase, setPhase] = React.useState<'running' | 'done'>('running')
-    const [note, setNote] = React.useState('正在播放过场…')
     const started = React.useRef(false)
 
     React.useEffect(() => {
@@ -477,40 +502,9 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       if (started.current) return
       started.current = true
       void launcher.launch().then((outcome) => {
-        if (!outcome.ran) {
-          setNote(
-            outcome.reason === 'deduped'
-              ? `刚刚已经触发过（${Math.round(LAUNCH_DEDUPE_MS / 1000)} 秒内不会重复打开）`
-              : '正在触发中…',
-          )
-          setPhase('done')
-          return
-        }
-        if (outcome.open?.kind === 'blocked') {
-          setNote('宿主要求的新窗口被拦下了，请点下面的手动链接')
-        } else if (outcome.open?.kind === 'same-tab') {
-          setNote('已跳转')
-        } else {
-          setNote('已打开 PosterFlow')
-        }
-        setPhase('done')
+        console.log('[posterflow-ai] launch outcome', outcome, diagnostics)
       })
     }, [])
-
-    const link = React.createElement(
-      'a',
-      {
-        key: 'manual',
-        href: DEFAULTS.targetUrl,
-        target: '_blank',
-        rel: 'noopener noreferrer',
-        style: { color: 'var(--dsw-alias-brand-primary)', textDecoration: 'underline' },
-      },
-      '手动打开 PosterFlow',
-    )
-
-    // 诊断行：一眼看出是哪一层重复执行
-    const diag = `触发 ${diagnostics.launches} · apply ${diagnostics.applies} · effect ${diagnostics.effects} · 渲染 ${diagnostics.panelRenders} · 被拦 ${diagnostics.blocked}`
 
     return React.createElement(
       'div',
@@ -530,11 +524,19 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       React.createElement(
         'div',
         { key: 'title', style: { fontSize: '15px', color: 'var(--dsw-alias-label-primary)' } },
-        phase === 'running' ? '🖼 开启生图模式' : '🖼 已开启',
+        '🖼 已开启',
       ),
-      React.createElement('div', { key: 'note' }, note),
-      link,
-      React.createElement('div', { key: 'diag', style: { marginTop: '6px', fontSize: '11px', opacity: '0.65' } }, diag),
+      React.createElement(
+        'a',
+        {
+          key: 'manual',
+          href: DEFAULTS.targetUrl,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          style: { color: 'var(--dsw-alias-brand-primary)', textDecoration: 'underline' },
+        },
+        '手动打开 PosterFlow',
+      ),
     )
   }
 

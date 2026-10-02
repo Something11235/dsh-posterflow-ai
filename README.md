@@ -22,6 +22,9 @@
   打开 https://www.posterflow-ai.xyz/（默认新标签页）
 ```
 
+面板上只保留两行文字：**🖼 已开启** 与 **手动打开 PosterFlow**。诊断信息只写控制台
+（DSH 窗口按 `Ctrl+Shift+I`，过滤 `[posterflow-ai]`），界面上不显示。
+
 ## 安装
 
 ```sh
@@ -93,8 +96,10 @@ dsh --profile plugindev --dump-config | grep -A10 'dsh-posterflow-ai'
    再由 [`scripts/embed-video.mjs`](scripts/embed-video.mjs) 生成 data URI 内联进 `lib/client.js`（产物约 **659 KB**）。
    换来的是**一定能播**：不依赖端口、协议、CORS 或路由。
 3. **过场铺满整个窗口。** 覆盖层 `position: fixed; inset: 0` + 视频 `width/height: 100%`、`object-fit: cover`，
-   所以是整窗填充而不是居中带黑边的信箱式播放。默认**带声音**起播；被自动播放策略拒绝时才降级静音，
-   并在右上角给出「开启声音」按钮（那一下是用户手势，必定能取消静音）。
+   所以是整窗填充而不是居中带黑边的信箱式播放。默认**带声音**起播（`muted: false`）；
+   若带声音起播被自动播放策略拒绝，则静音重试保证画面一定播出来，
+   同时在画面底部居中给出「🔊 点击开启声音」——那一下是用户手势，必定能出声。
+   另外内联的短片用 ffmpeg `loudnorm` 把音轨规整到约 **−15 dB**（原始只有 −25 dB，偏轻到容易以为"没声音"）。
 4. **一次点击只跑一次，而且只开一个标签页。** 这条踩了两轮坑，最终结论：
    - **DSH 桌面版的 Electron 主进程对任何 `window.open` 都返回 `deny`，并顺手 `shell.openExternal(url)`**
      （见 `app.asar/lib/main.js`）。所以桌面版里 `window.open` **必然返回 `null`**，而网站**已经被宿主用系统浏览器打开过一次**。
@@ -103,8 +108,9 @@ dsh --profile plugindev --dump-config | grep -A10 'dsh-posterflow-ai'
    - 去重窗口从 1.5 秒放大到 **20 秒**（`LAUNCH_DEDUPE_MS`）：面板可能被重新挂载（React 严格模式 / slot 重注册），
      而 1.5 秒挡不住"过场播完（约 6.5 秒）后再挂载一次"。
    - `new-tab` 路径**只调用一次 `window.open`**（具名窗口 + 打开后手动把 `opener` 置空）。
-   另外面板底部会显示诊断计数（`触发 / apply / effect / 渲染 / 被拦`）——以后再出"打开两次"，一眼就能看出是哪一层重复执行。
-   测试：[`tests/launcher.test.ts`](tests/launcher.test.ts)、[`tests/open-target.test.ts`](tests/open-target.test.ts)（含"返回 null 不导航"）。
+   诊断计数（`触发 / apply / effect / 渲染 / 被拦`）仍然在维护，但**只写控制台**，界面上不显示。
+   测试：[`tests/launcher.test.ts`](tests/launcher.test.ts)、[`tests/open-target.test.ts`](tests/open-target.test.ts)（含"返回 null 不导航"）、
+   [`tests/panel-ui.test.ts`](tests/panel-ui.test.ts)（面板只有两行）。
 5. **client 半边读不到宿主的 `Config`**，所以宿主用 `/posterflow-ai/config.json` 把它递过去
    （`Cache-Control: no-store`）。client 侧读取失败时回落到内置默认值，而默认值就是"内联视频"，
    所以**入口永远不会因为路由不通而失灵**。
@@ -129,7 +135,7 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
 | `verify:embed` | 内联视频模块与 `assets/transition.webm` 一致（防止改了视频忘了重新生成） |
 | `typecheck` | 严格 TS，含 client 半边的惰性 CJS 形态 |
 | `lint` | oxlint（生成的视频模块已排除） |
-| `test` | **49 个用例**，五个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、编排去重（20 秒窗口 / 进行中 / 诊断计数）、开窗（只开一次、`null` 不导航）、真 WebServer + 真 HTTP 请求 |
+| `test` | **53 个用例**，六个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、面板 UI（只有两行）、编排去重（20 秒窗口 / 进行中 / 诊断计数）、开窗（只开一次、`null` 不导航）、真 WebServer + 真 HTTP 请求 |
 | `build` | tsdown 产出 `lib/index.js`（ESM）+ `lib/client.js`（IIFE 普通脚本，约 659 KB） |
 | `test:artifact` | 构建产物挂真 WebServer：路由可用、卸载即撤 |
 | `test:client` | 在 Node 里执行 `lib/client.js`：执行期 **0 次模块请求、0 次 DOM 变更**（惰性契约），materialize 后导出 `name/inject/apply` |
