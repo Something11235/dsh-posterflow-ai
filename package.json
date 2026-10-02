@@ -67,7 +67,7 @@
     "test:watch": "vitest",
     "test:artifact": "node scripts/verify-artifact.mjs",
     "test:client": "node scripts/verify-client-bundle.mjs lib/client.js",
-    "prepublishOnly": "pnpm run verify:embed && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:artifact && pnpm run test:client"
+    "prepublishOnly": "npm run verify:embed && npm run typecheck && npm run test && npm run build && npm run test:artifact && npm run test:client"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",

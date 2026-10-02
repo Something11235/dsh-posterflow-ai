@@ -33,7 +33,7 @@
 | --- | --- | --- | --- |
 | **源码压缩包** | GitHub → **Code → Download ZIP** | **不需要** | 仓库里已提交构建产物 `lib/`，解压即可装，**不用装 Node、不用编译**（已实测） |
 | Git 仓库 | `github:Something11235/dsh-posterflow-ai#main` | **需要** | 机器上有 git 时最省事；界面里粘这个地址 |
-| npm 包名 | `dsh-posterflow-ai` | 不需要 | 需先发布到 npm（尚未发布） |
+| npm 包名 | `dsh-posterflow-ai` | 不需要 | **发布后任何人只输包名即可**（见文末「发布到 npm」） |
 | 本地包 | 指向本地目录 / `.tgz` | 不需要 | 内网、无 git 的机器用这个 |
 
 > **安装失败排查**
@@ -184,6 +184,19 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
   该包未随包发布类型定义，目前**未实现**。
 - 入口固定在侧栏主列表**最后一行**（`PANEL_ORDER = 100`）。要挪位置改这个 order，或换成
   `sidebar.footer.action` 这类按钮槽（那时只需注册一处）。可用挂载点见参考工作区的 `reference/live-slot-catalog.md`（90 个）。
+
+## 维护者：发布到 npm
+
+```powershell
+cd 'D:\Projects\DSH工作台\插件制作\dsh-posterflow-ai'
+npm login        # 首次登录；本目录的 .npmrc 已把机器上的失效代理置空，registry 直连
+npm publish      # prepublishOnly 会先跑七道门（嵌入校验/类型/lint/测试/构建/产物/被包契约），全绿才上传
+```
+
+发布后任何人（**包括没装 git 的机器**）在「设置 → 插件 → 添加插件」里只输 `dsh-posterflow-ai`
+即可安装：不需要 git、不需要 Node、不需要编译。
+
+发新版：改完 → `npm version patch`（或 `minor` / `major`）→ `git push --follow-tags` → `npm publish`。
 
 ## 许可
 

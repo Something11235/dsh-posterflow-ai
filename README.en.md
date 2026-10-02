@@ -33,7 +33,7 @@ Three ways — pick by the target machine:
 | --- | --- | --- | --- |
 | **Source archive** | GitHub → **Code → Download ZIP** | **no** | The repo ships the built `lib/`, so extracting is enough — **no Node, no build** (verified) |
 | Git repo | `github:Something11235/dsh-posterflow-ai#main` | **yes** | Easiest when git exists; paste this into the app |
-| npm package | `dsh-posterflow-ai` | no | Requires an npm publish (not published yet) |
+| npm package | `dsh-posterflow-ai` | no | **After publishing, anyone just types the name** (see “Publishing to npm” below) |
 | Local package | path to a local dir / `.tgz` | no | For machines without git |
 
 > **Install troubleshooting**
@@ -191,6 +191,19 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
   the `sidebarRightTabs` service contract, which that package does not publish types for — **not implemented**.
 - The entry sits at the **last row** of the sidebar list (`PANEL_ORDER = 100`). Change that order to move it, or
   switch to a button-style slot such as `sidebar.footer.action` (then only one registration is needed).
+
+## Maintainer: publishing to npm
+
+```powershell
+cd 'D:\Projects\DSH工作台\插件制作\dsh-posterflow-ai'
+npm login        # first time; the local .npmrc neutralises the dead proxy so the registry is reachable
+npm publish      # prepublishOnly runs all seven gates first; nothing is uploaded unless they pass
+```
+
+After publishing, anyone — **including machines without git** — installs by typing `dsh-posterflow-ai`
+in *Settings → Plugins → Add plugin*: no git, no Node, no build.
+
+Releases: change something → `npm version patch` (or `minor` / `major`) → `git push --follow-tags` → `npm publish`.
 
 ## License
 
