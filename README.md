@@ -31,7 +31,8 @@
 
 | 方式 | 地址 / 命令 | 需要 `git` | 说明 |
 | --- | --- | --- | --- |
-| Git 仓库 | `github:Something11235/dsh-posterflow-ai#main` | **需要** | 当前推荐；界面里粘这个地址 |
+| **源码压缩包** | GitHub → **Code → Download ZIP** | **不需要** | 仓库里已提交构建产物 `lib/`，解压即可装，**不用装 Node、不用编译**（已实测） |
+| Git 仓库 | `github:Something11235/dsh-posterflow-ai#main` | **需要** | 机器上有 git 时最省事；界面里粘这个地址 |
 | npm 包名 | `dsh-posterflow-ai` | 不需要 | 需先发布到 npm（尚未发布） |
 | 本地包 | 指向本地目录 / `.tgz` | 不需要 | 内网、无 git 的机器用这个 |
 
@@ -48,6 +49,18 @@
 > - 报代理相关错误（`ECONNREFUSED 127.0.0.1:65532`）
 >   → 那是 `~/.npmrc` 里的失效代理；pnpm 不会向上层目录找 `.npmrc`，请在**profile 目录**里放一份
 >     `.npmrc`（`proxy=` / `https-proxy=`）或修掉全局代理设置。
+
+### 机器上没有 git 时（已实测走通）
+
+1. 打开 https://github.com/Something11235/dsh-posterflow-ai → **Code → Download ZIP**
+   （或直接下 `https://github.com/Something11235/dsh-posterflow-ai/archive/refs/heads/main.tar.gz`，约 2 MB）
+2. 解压到任意目录，例如 `D:\dsh-posterflow-ai-main`。
+   仓库里**已经带了 `lib/client.js`、`lib/index.js`**，所以不需要 Node、不需要 `pnpm install`、不需要编译。
+3. 安装（二选一）：
+   - 应用内「设置 → 插件 → 添加插件」→ 选**本地路径**，指向该目录；
+   - 命令行：`dsh plugin --profile <你的profile> add "file:D:\dsh-posterflow-ai-main"`
+4. **完全退出 DSH 再打开**（`dsh.client` 扫描结果缓存到重启），侧栏最后一行就会出现入口。
+5. 装完**可以删掉解压目录**：pnpm 已把文件复制/硬链进 profile，实测把源目录改名后插件仍能正常加载。
 
 ```sh
 # 从 GitHub 安装（推荐，会被社区市场自动收录）

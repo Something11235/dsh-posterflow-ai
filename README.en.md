@@ -31,7 +31,8 @@ Three ways — pick by the target machine:
 
 | Way | Address / command | Needs `git` | Notes |
 | --- | --- | --- | --- |
-| Git repo | `github:Something11235/dsh-posterflow-ai#main` | **yes** | Current recommendation; paste this into the app |
+| **Source archive** | GitHub → **Code → Download ZIP** | **no** | The repo ships the built `lib/`, so extracting is enough — **no Node, no build** (verified) |
+| Git repo | `github:Something11235/dsh-posterflow-ai#main` | **yes** | Easiest when git exists; paste this into the app |
 | npm package | `dsh-posterflow-ai` | no | Requires an npm publish (not published yet) |
 | Local package | path to a local dir / `.tgz` | no | For machines without git |
 
@@ -49,6 +50,20 @@ Three ways — pick by the target machine:
 > - Proxy errors (`ECONNREFUSED 127.0.0.1:65532`)
 >   → a dead proxy in `~/.npmrc`; pnpm does not walk up for `.npmrc`, so put one in the **profile directory**
 >     (`proxy=` / `https-proxy=`).
+
+### On a machine without git (verified end to end)
+
+1. Open https://github.com/Something11235/dsh-posterflow-ai → **Code → Download ZIP**
+   (or fetch `https://github.com/Something11235/dsh-posterflow-ai/archive/refs/heads/main.tar.gz`, ≈ 2 MB).
+2. Extract anywhere, e.g. `D:\dsh-posterflow-ai-main`. The repo **already contains the built
+   `lib/client.js` and `lib/index.js`**, so no Node, no `pnpm install`, no compilation is needed.
+3. Install either way:
+   - *Settings → Plugins → Add plugin* → choose **local path** and point at that folder;
+   - or `dsh plugin --profile <your profile> add "file:D:\dsh-posterflow-ai-main"`.
+4. **Fully quit and reopen DSH** (the `dsh.client` scan is cached until restart); the entry appears as the
+   last sidebar row.
+5. The extracted folder **can be deleted afterwards** — pnpm copied/hard-linked the files into the profile;
+   verified by renaming the source folder and reloading.
 
 ```sh
 # from GitHub (also gets auto-listed by the community marketplace)
