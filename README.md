@@ -67,7 +67,7 @@ dsh --profile plugindev --dump-config | grep -A10 'dsh-posterflow-ai'
 | `transition` | `video` \| `none` | `video` | 是否播放过场视频 |
 | `videoSource` | `inline` \| `route` | `inline` | `inline` = 用产物内联的视频（**一定能播**）；`route` = 用宿主 HTTP 路由（仅在页面确由 `ctx.webServer` 提供服务时有效） |
 | `videoFile` | string | `assets/transition.webm` | `route` 模式下要提供的包内文件 |
-| `muted` | boolean | `true` | 先静音起播；设 `false` 时等播放开始后再取消静音 |
+| `muted` | boolean | `false` | 默认**带声音**；被浏览器自动播放策略拒绝时自动降级为静音，并在画面右上角给出「开启声音」按钮 |
 | `maxWaitMs` | integer 0–60000 | `8000` | 视频最长等待；超时直接跳转，不让用户卡在过场里 |
 
 ## 它是怎么工作的（两层）
@@ -95,9 +95,14 @@ dsh --profile plugindev --dump-config | grep -A10 'dsh-posterflow-ai'
 3. **过场铺满整个窗口。** 覆盖层 `position: fixed; inset: 0` + 视频 `width/height: 100%`、`object-fit: cover`，
    所以是整窗填充而不是居中带黑边的信箱式播放。先静音起播（自动播放的唯一可靠保证），
    配置要求有声时等 `playing` 之后再取消静音。
-4. **一次点击只跑一次。** React 严格模式会重复执行 effect、点击也可能被重复派发；没有闸门就会
-   **播两遍视频、开两个标签页**（就是"出现两次相同的界面"）。`createLauncher()` 用 1.5 秒窗口 +
-   进行中标志去重，并有专门的测试（[`tests/launcher.test.ts`](tests/launcher.test.ts)）钉住。
+4. **一次点击只跑一次，而且只开一个标签页。** 两个坑叠在一起：
+   一是 React 严格模式会重复执行 effect、点击也可能被重复派发，没有闸门就会播两遍视频
+   （`createLauncher()` 用 1.5 秒窗口 + 进行中标志去重）；
+   二是 **`window.open(url, '_blank', 'noopener,...')` 按规范必定返回 `null`**，老代码把 `null` 当成
+   "被拦截"又对当前页 `location.assign()`，于是**新标签页与当前页各开一次**。
+   现在改用**具名窗口**（同名标签页由浏览器自动复用）并在打开后手动把 `opener` 置空，
+   只有真的被拦下才降级到当前页跳转。两处都有测试：
+   [`tests/launcher.test.ts`](tests/launcher.test.ts)、[`tests/open-target.test.ts`](tests/open-target.test.ts)。
 5. **client 半边读不到宿主的 `Config`**，所以宿主用 `/posterflow-ai/config.json` 把它递过去
    （`Cache-Control: no-store`）。client 侧读取失败时回落到内置默认值，而默认值就是"内联视频"，
    所以**入口永远不会因为路由不通而失灵**。
@@ -122,7 +127,7 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
 | `verify:embed` | 内联视频模块与 `assets/transition.webm` 一致（防止改了视频忘了重新生成） |
 | `typecheck` | 严格 TS，含 client 半边的惰性 CJS 形态 |
 | `lint` | oxlint（生成的视频模块已排除） |
-| `test` | **39 个用例**，四个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、编排闸门（单次触发）、真 WebServer + 真 HTTP 请求 |
+| `test` | **45 个用例**，五个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、编排闸门（单次触发）、开窗（只开一个标签页）、真 WebServer + 真 HTTP 请求 |
 | `build` | tsdown 产出 `lib/index.js`（ESM）+ `lib/client.js`（IIFE 普通脚本，约 659 KB） |
 | `test:artifact` | 构建产物挂真 WebServer：路由可用、卸载即撤 |
 | `test:client` | 在 Node 里执行 `lib/client.js`：执行期 **0 次模块请求、0 次 DOM 变更**（惰性契约），materialize 后导出 `name/inject/apply` |

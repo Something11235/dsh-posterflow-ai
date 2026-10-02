@@ -127,7 +127,7 @@ describe('插件元数据', () => {
     expect(validated.transition).toBe('video')
     expect(validated.videoSource).toBe('inline') // 默认内联：不依赖端口/路由，一定能播
     expect(validated.videoFile).toBe('assets/transition.webm')
-    expect(validated.muted).toBe(true)
+    expect(validated.muted).toBe(false) // 默认带声音
     expect(validated.maxWaitMs).toBe(8000)
   })
 
@@ -138,7 +138,7 @@ describe('插件元数据', () => {
     expect(DEFAULTS.transition).toBe('video')
     expect(DEFAULTS.videoSource).toBe('inline')
     expect(DEFAULTS.videoUrl).toBe('') // inline 模式下不使用路由地址
-    expect(DEFAULTS.muted).toBe(true)
+    expect(DEFAULTS.muted).toBe(false) // 默认带声音
     expect(DEFAULTS.maxWaitMs).toBe(8000)
   })
 

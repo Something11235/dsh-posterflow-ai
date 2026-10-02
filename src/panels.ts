@@ -3,14 +3,14 @@
  *
  * 为什么把逻辑放在这里而不是直接写在 `client.ts` 里：
  * `client.ts` 必须是"执行即注册工厂"的脚本形态，没法被测试导入。
- * 抽成模块后：① 注册契约与单次触发闸门可单测；② 构建时会被 inline 进 `lib/client.js`，
- * 产物依然是零 npm 依赖的普通脚本。
+ * 抽成模块后：① 注册契约、闸门、开窗逻辑可单测；② 构建时会 inline 进 `lib/client.js`。
  *
- * 视频交付方式（本机实测后的最终选择）：
- * 桌面版 GUI（127.0.0.1:19387）**不是** `ctx.webServer` 的路由面——连内核自己的 `/plugins/...`
- * 都 404，所以"宿主注册 HTTP 路由、页面去取"这条路在桌面版走不通，表现就是"完全没播"。
- * 现在默认把视频以 data URI 内联在产物里（由 scripts/embed-video.mjs 生成），
- * 不依赖端口、协议或路由，**一定能播**；`videoSource: 'route'` 仍保留给能走通路由的部署。
+ * 两个踩坑后的关键设计：
+ *  - **视频内联**：桌面版 GUI（19387）不是 `ctx.webServer` 的路由面（实测连 `/plugins/...` 都 404），
+ *    走路由必然播不出视频，所以把视频做成 data URI 带在产物里。
+ *  - **开窗不能用 noopener**：`window.open(url, '_blank', 'noopener,...')` 按规范**必返回 null**，
+ *    会被"被拦截就降级"的逻辑误判，于是新标签页 + 当前页各开一次 = 打开两个。
+ *    改为具名窗口（重复打开复用同一标签）+ 手动把 opener 置空。
  */
 import { TRANSITION_VIDEO_BYTES, TRANSITION_VIDEO_DATA_URI } from './generated/transition-video.js'
 
@@ -44,12 +44,15 @@ export const DEFAULTS: ClientConfig = {
   transition: 'video',
   videoSource: 'inline',
   videoUrl: '',
-  muted: true,
+  muted: false, // 默认**带声音**；被自动播放策略拦下时才降级静音并给「开启声音」按钮
   maxWaitMs: 8000,
 }
 
 /** 单次触发闸门的时间窗：这段时间内的重复触发一律忽略。 */
 export const LAUNCH_DEBOUNCE_MS = 1500
+
+/** 具名窗口：同名标签页会被复用，从浏览器层面杜绝"开两个"。 */
+export const WINDOW_NAME = 'posterflow-ai-launch'
 
 /** 侧栏主列表那一行的 id，同时也是 `main` 面板的 key。 */
 export const PANEL_ID = 'posterflow-ai'
@@ -104,8 +107,7 @@ export interface Launcher {
  * 创建编排器。
  *
  * 为什么要闸门：React 严格模式下 effect 会跑两次，侧栏那一行的点击也可能被重复派发；
- * 没有闸门就会**播两遍视频、开两个标签页**（用户报的"出现两次相同的界面"）。
- * 闸门放在闭包里，组件重新挂载也拦得住。
+ * 没有闸门就会**播两遍视频**。闸门放在闭包里，组件重新挂载也拦得住。
  *
  * @param runtime - 副作用实现（可注入替身）。
  * @returns 编排器。
@@ -133,14 +135,60 @@ export function createLauncher(runtime: LaunchRuntime): Launcher {
   }
 }
 
+/** 可注入的窗口面（方便单测开窗逻辑）。 */
+export interface WindowLike {
+  open(url: string, target?: string, features?: string): unknown
+  location: { assign(url: string): void }
+}
+
+/**
+ * 创建「跳转」实现。
+ *
+ * 这里的坑必须记住：**`window.open(url, '_blank', 'noopener,...')` 一定返回 `null`**（规范如此），
+ * 所以不能把 `null` 当成"被拦截"。老代码正是因此又走了一次 `location.assign`，
+ * 于是新标签页与当前页各打开一次。现在改为：
+ *   ① 只用**具名窗口**（同名会复用，天然不会重复开）；
+ *   ② 不传 noopener，而是打开后手动把 `opener` 置空（安全性等价）；
+ *   ③ 只有真的返回 null（弹窗被拦）才降级到当前页跳转。
+ *
+ * @param win - 窗口对象（默认 `window`）。
+ * @returns 跳转函数。
+ */
+export function createOpenTarget(win: WindowLike): (config: ClientConfig) => void {
+  return (config: ClientConfig): void => {
+    if (config.openIn === 'same-tab') {
+      win.location.assign(config.targetUrl)
+      return
+    }
+    const opened = win.open(config.targetUrl, WINDOW_NAME) as { opener?: unknown; focus?: () => void } | null | undefined
+    if (opened === null || opened === undefined) {
+      // 真正的拦截才降级
+      win.location.assign(config.targetUrl)
+      return
+    }
+    try {
+      opened.opener = null
+    } catch {
+      /* 跨源时可能不可写，忽略 */
+    }
+    try {
+      opened.focus?.()
+    } catch {
+      /* 忽略 */
+    }
+  }
+}
+
 /** 可覆盖的副作用实现。 */
 export type PanelRuntime = Partial<LaunchRuntime>
 
 interface DomNode {
   style: Record<string, string>
+  textContent: string
+  title: string
   setAttribute(name: string, value: string): void
   appendChild(child: unknown): void
-  addEventListener(type: string, listener: () => void): void
+  addEventListener(type: string, listener: (event?: { stopPropagation?: () => void }) => void): void
   remove(): void
 }
 
@@ -158,14 +206,14 @@ declare const fetch: (input: string, init?: { cache?: string }) => Promise<{
   status: number
   json(): Promise<unknown>
 }>
-declare const window: {
-  open(url: string, target?: string, features?: string): unknown
-  location: { assign(url: string): void }
-}
+declare const window: WindowLike
 declare const document: {
   createElement(tag: string): DomNode
   body: DomNode
 }
+
+/** 生产环境共享同一个编排器：即使模块被多次实例化，闸门也只认一份状态。 */
+let sharedLauncher: Launcher | undefined
 
 /**
  * 组装 client 插件。
@@ -192,17 +240,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       return cached
     })
 
-  /** 跳转；`new-tab` 被浏览器拦下时降级为当前页跳转。 */
-  const openTarget =
-    runtime.openTarget ??
-    ((config: ClientConfig): void => {
-      if (config.openIn === 'same-tab') {
-        window.location.assign(config.targetUrl)
-        return
-      }
-      const opened = window.open(config.targetUrl, '_blank', 'noopener,noreferrer')
-      if (opened === null || opened === undefined) window.location.assign(config.targetUrl)
-    })
+  const openTarget = runtime.openTarget ?? createOpenTarget(window)
 
   /** 视频地址：默认用内联的 data URI，部署方显式要求 route 时才走宿主路由。 */
   const videoSourceFor = (config: ClientConfig): string =>
@@ -210,7 +248,11 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
 
   /**
    * 播放过场视频，**铺满整个窗口**。
-   * 结束 / 出错 / 超时 / 点击画面都会立刻放行；绝不把用户卡在过场里。
+   *
+   * 声音策略：先按配置尝试（默认 `muted: false`，即有声音）。若被自动播放策略拒绝，
+   * 退化为静音起播——**并在右上角给一个「开启声音」按钮**（那一下是用户手势，必定能取消静音）。
+   *
+   * 结束 / 出错 / 超时 / 点击画面都会立刻放行。
    */
   const playTransition =
     runtime.playTransition ??
@@ -238,9 +280,52 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           resolve()
         }
 
-        // 先静音：这是自动播放不被浏览器拦下的唯一可靠保证。
-        // 若配置要求有声，等 'playing' 之后再取消静音——改属性不会触发 play() 拒绝。
-        video.muted = true
+        /** 右上角的小按钮：被策略静音时用来开启声音，无法开启时当作"跳过"。 */
+        const makeSoundButton = (): DomNode => {
+          const button = document.createElement('button')
+          button.textContent = '🔊 开启声音'
+          button.title = '点击开启声音（视频被浏览器自动播放策略静音）'
+          button.setAttribute('type', 'button')
+          Object.assign(button.style, {
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            zIndex: '1',
+            padding: '6px 12px',
+            border: '1px solid rgba(255,255,255,0.35)',
+            borderRadius: '999px',
+            background: 'rgba(0,0,0,0.45)',
+            color: '#fff',
+            font: 'inherit',
+            fontSize: '13px',
+            cursor: 'pointer',
+          })
+          button.addEventListener('click', (event) => {
+            event?.stopPropagation?.() // 别触发"点击跳过"
+            video.muted = false
+            button.remove()
+          })
+          return button
+        }
+
+        const startPlayback = (): void => {
+          const played = video.play()
+          if (played !== undefined && typeof played.catch === 'function') {
+            played.catch(() => {
+              // 自动播放被拒（多半是不允许带声音）→ 静音重试，并给出开启声音的入口
+              video.muted = true
+              const retry = video.play()
+              if (retry !== undefined && typeof retry.catch === 'function') retry.catch(finish)
+              try {
+                overlay.appendChild(makeSoundButton())
+              } catch {
+                /* 忽略 */
+              }
+            })
+          }
+        }
+
+        video.muted = config.muted
         video.autoplay = true
         video.playsInline = true
         video.src = videoSourceFor(config)
@@ -252,9 +337,6 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         })
         video.addEventListener('ended', finish)
         video.addEventListener('error', finish)
-        video.addEventListener('playing', () => {
-          if (!config.muted) video.muted = false
-        })
 
         overlay.setAttribute('role', 'presentation')
         overlay.setAttribute('aria-hidden', 'true')
@@ -277,16 +359,19 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         document.body.appendChild(overlay)
 
         timer = setTimeout(finish, config.maxWaitMs)
-        const played = video.play()
-        if (played !== undefined && typeof played.catch === 'function') played.catch(finish)
+        startPlayback()
       }))
 
-  const launcher = createLauncher({
+  const builtRuntime: LaunchRuntime = {
     loadConfig,
     playTransition,
     openTarget,
     ...(runtime.now === undefined ? {} : { now: runtime.now }),
-  })
+  }
+
+  // 单测注入替身时每次新建闸门（用例之间互不影响）；生产环境全模块共享一份。
+  const injected = runtime.loadConfig !== undefined || runtime.playTransition !== undefined || runtime.openTarget !== undefined
+  const launcher = injected ? createLauncher(builtRuntime) : (sharedLauncher ??= createLauncher(builtRuntime))
 
   /**
    * 侧栏那一行只接收**图标**的 owner props（`size` 与 `active`）：
@@ -361,7 +446,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         { key: 'title', style: { fontSize: '15px', color: 'var(--dsw-alias-label-primary)' } },
         phase === 'running' ? '🖼 开启生图模式' : '🖼 已开启',
       ),
-      React.createElement('div', { key: 'message' }, phase === 'running' ? '正在播放过场…' : '已在新标签页打开 PosterFlow'),
+      React.createElement('div', { key: 'message' }, phase === 'running' ? '正在播放过场…' : '已打开 PosterFlow'),
       link,
     )
   }

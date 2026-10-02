@@ -62,7 +62,7 @@ replacement, not a deep merge** — omitted fields fall back to their schema def
 | `transition` | `video` \| `none` | `video` | Play the transition clip |
 | `videoSource` | `inline` \| `route` | `inline` | `inline` = the video inlined in the bundle (**always plays**); `route` = the host HTTP route (only when the page is actually served by `ctx.webServer`) |
 | `videoFile` | string | `assets/transition.webm` | Package-internal file used in `route` mode |
-| `muted` | boolean | `true` | Start muted; when `false`, unmute once playback has begun |
+| `muted` | boolean | `false` | Plays **with sound** by default; if the autoplay policy refuses, it falls back to muted and offers a “enable sound” button in the corner |
 | `maxWaitMs` | integer 0–60000 | `8000` | Give up on the clip after this and just navigate |
 
 ## How it works (two halves)
@@ -93,10 +93,15 @@ Six deliberate choices:
 3. **The transition fills the entire window.** The overlay is `position: fixed; inset: 0`, the video is
    `width/height: 100%` with `object-fit: cover`, so it is a full-window fill rather than letterboxed.
    It starts muted (the only reliable autoplay guarantee) and unmutes after `playing` when configured to.
-4. **One click runs once.** React StrictMode re-runs effects and clicks can be delivered twice; without a gate
-   that means **the video plays twice and two tabs open** — the reported “the same screen appears twice”.
-   `createLauncher()` de-duplicates with a 1.5 s window plus an in-flight flag, pinned by
-   [`tests/launcher.test.ts`](tests/launcher.test.ts).
+4. **One click runs once, and only one tab opens.** Two traps stacked:
+   first, React StrictMode re-runs effects and clicks can be delivered twice, so without a gate the clip plays
+   twice (`createLauncher()` de-duplicates with a 1.5 s window plus an in-flight flag);
+   second, **`window.open(url, '_blank', 'noopener,...')` returns `null` by specification**, and the old code
+   read that as “blocked” and also ran `location.assign()` on the current page — so the new tab *and* the
+   current page each opened the site. It now uses a **named window** (the browser reuses a same-named tab) and
+   clears `opener` manually, falling back to same-page navigation only when the popup really is blocked.
+   Both are pinned by tests: [`tests/launcher.test.ts`](tests/launcher.test.ts),
+   [`tests/open-target.test.ts`](tests/open-target.test.ts).
 5. **The client half cannot read the host's `Config`**, so the host exposes `/posterflow-ai/config.json`
    (`Cache-Control: no-store`). If the fetch fails the client falls back to built-in defaults — and the default
    is the inlined video, so **the entry never stops working because a route is unreachable**.
@@ -121,7 +126,7 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
 | `verify:embed` | The inlined video module matches `assets/transition.webm` (catches “changed the clip, forgot to regenerate”) |
 | `typecheck` | Strict TS, including the client half's lazy-CJS shape |
 | `lint` | oxlint (the generated video module is excluded) |
-| `test` | **39 cases** across four files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the launch gate (single-fire), and a **real WebServer with real HTTP requests** |
+| `test` | **45 cases** across five files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the launch gate (single-fire), window opening (exactly one tab), and a **real WebServer with real HTTP requests** |
 | `build` | tsdown → `lib/index.js` (ESM) + `lib/client.js` (IIFE plain script, ≈ 659 KB) |
 | `test:artifact` | The built host artefact mounted on a real WebServer: routes answer, and vanish on dispose |
 | `test:client` | Executes the built `lib/client.js` in Node: **0 module requests and 0 DOM mutations at execution** (the lazy contract), and `name/inject/apply` after materialization |

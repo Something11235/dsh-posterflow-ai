@@ -60,7 +60,10 @@ export interface Config {
   transition: 'video' | 'none'
   /** 过场视频在包内的相对路径。 */
   videoFile: string
-  /** 视频是否静音（静音是自动播放的唯一可靠保证）。 */
+  /**
+   * 过场视频是否静音。默认 `false`（有声音）；被浏览器自动播放策略拒绝时会自动降级为静音，
+   * 并在画面右上角给出「开启声音」按钮。
+   */
   muted: boolean
   /** 视频最长等待时间（毫秒），超时直接跳转，避免用户被卡在过场里。 */
   maxWaitMs: number
@@ -74,7 +77,7 @@ export const Config: z<Config> = z.object({
   openIn: z.union([z.const('new-tab'), z.const('same-tab')]).default('new-tab'),
   transition: z.union([z.const('video'), z.const('none')]).default('video'),
   videoFile: z.string().default('assets/transition.webm'),
-  muted: z.boolean().default(true),
+  muted: z.boolean().default(false),
   maxWaitMs: z.number().step(1).min(0).max(60_000).default(8000),
 })
 
