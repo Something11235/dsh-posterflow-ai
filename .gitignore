@@ -26,3 +26,6 @@ dist/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# 发布失败时 npm/pnpm 会在这里留下 tarball，不要提交
+*.tgz
