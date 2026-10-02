@@ -7,11 +7,15 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) plug
 ## What it does
 
 ```
-sidebar footer (next to Settings)
-┌──────────────────────────┐
-│  🖼 开启生图模式           │  ← click
-└──────────────────────────┘
-        ↓
+sidebar — below 插件 / 自动化任务, as the last row
+  ┌────────────────────────────┐
+  │  ＋   New session            │
+  ├────────────────────────────┤
+  │  ◇   Plugins                 │
+  │  🕘   Scheduled tasks         │
+  │  🖼   开启生图模式    ← added │
+  └────────────────────────────┘
+        ↓ click
   full-screen transition video (assets/transition.webm)
   ended / errored / timed out / clicked → continue immediately
         ↓
@@ -69,25 +73,31 @@ A **dual-face plugin**; the halves do different jobs:
 | Half | Artefact | Job |
 | --- | --- | --- |
 | Host (Node) | `lib/index.js` | Registers two HTTP routes: serves the **transition video** on demand (Range/206/416/HEAD), and hands the **deployment config** to the browser as JSON |
-| Browser | `lib/client.js` | A lazy-CJS table: registers the button into `sidebar.footer.action`; on click it loads config → plays the video → navigates |
+| Browser | `lib/client.js` | A lazy-CJS table registering **two** things: the last row of the sidebar list (`sidebar.panellist`, order 100) and the matching main panel (`main` keyed `posterflow-ai`), which runs the transition and the redirect |
 
-Three deliberate choices:
+Four deliberate choices:
 
-1. **The video is served, not inlined.** It is 2.66 MiB; base64-inlining it would push the client
+1. **That sidebar row is not a plain button slot.** Every id in `sidebar.panellist` maps to **a main panel** —
+   插件 / 自动化任务 are `plugins` (order 0) and `schedules` (order 10). The sidebar renders the button and reads
+   its `label` from the registration metadata; our component only draws the **icon** (owner props are just
+   `size` / `active`). So clicking the row switches to the panel with the same id: we also register
+   `main` keyed `posterflow-ai` to run “transition → redirect”, and use order 100 to be the last row.
+2. **The video is served, not inlined.** It is 2.66 MiB; base64-inlining it would push the client
    bundle to ~3.6 MB downloaded on every page boot. Through
    `ctx.webServer.register({ kind: 'exact', path: '/posterflow-ai/transition.webm' })` the browser
    fetches it only when it actually plays, and `Range` requests get a proper 206 (video seeking
    depends on it).
-2. **The client half cannot read the host's `Config`**, so the host exposes
+3. **The client half cannot read the host's `Config`**, so the host exposes
    `/posterflow-ai/config.json` (`Cache-Control: no-store`). If the fetch fails the client falls back
-   to built-in defaults — the button never stops working.
-3. **No `inject: ['webServer']`.** It reads `ctx.get('webServer')` and degrades, so the plugin also
+   to built-in defaults — the entry never stops working.
+4. **No `inject: ['webServer']`.** It reads `ctx.get('webServer')` and degrades, so the plugin also
    loads in non-web profiles (it simply registers no routes). The browser half only exists in the
    Web shell anyway.
 
-The button registers into `sidebar.footer.action` (list / root scope, `{id, order, label}`) with
-`order: 20`, coexisting with `cordis-panel` and dsh-context's `context-overview`. In the 56px rail
-the owner passes `wide: false` and only the icon is rendered.
+> The desktop (Electron) app **does** have `ctx.webServer`: the desktop profile includes
+> `@deepseek-ai/dsh-web-app`, whose patch layer carries
+> `- id: webserver / name: '@deepseek-ai/dsh-host-webserver'` (that is what listens on port 19387).
+> So the transition video is served over the route there too, with nothing inlined.
 
 ## Development
 
@@ -105,7 +115,7 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
 | --- | --- |
 | `typecheck` | Strict TS, including the client half's lazy-CJS shape |
 | `lint` | oxlint |
-| `test` | **23 cases**: `tests/route.test.ts` pure logic (Range parsing, path-escape guard); `tests/webserver.test.ts` a **real WebServer with real HTTP requests** |
+| `test` | **32 cases** across three files: `tests/route.test.ts` pure logic (Range parsing, path-escape guard); `tests/registration.test.ts` the sidebar/panel placement contract; `tests/webserver.test.ts` a **real WebServer with real HTTP requests** |
 | `build` | tsdown → `lib/index.js` (ESM) + `lib/client.js` (IIFE plain script) |
 | `test:artifact` | The built host artefact mounted on a real WebServer: routes answer, and vanish on dispose |
 | `test:client` | Executes the built `lib/client.js` in Node: **0 module requests and 0 DOM mutations at execution** (that is the lazy contract), and `name/inject/apply` after materialization |
@@ -122,8 +132,10 @@ bytes are the WebM/EBML magic; an out-of-range Range returns 416; `HEAD` returns
   bytes changes can go live.
 - The transition video is a **bundled asset** — you cannot point `videoFile` at an arbitrary HTTP URL,
   and it is confined to the package directory.
-- The button lives in the sidebar footer. To move it, change the slot key in `src/client.ts`
-  (the reference workspace lists 90 live mount points in `reference/live-slot-catalog.md`).
+- The entry sits at the **last row** of the sidebar list (`PANEL_ORDER = 100`). To move it, change that
+  order, or switch to a button-style slot such as `sidebar.footer.action` (then only one registration is
+  needed and the `main` panel can go). The reference workspace lists 90 live mount points in
+  `reference/live-slot-catalog.md`.
 
 ## License
 

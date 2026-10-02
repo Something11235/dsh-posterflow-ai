@@ -7,11 +7,15 @@
 ## 它长什么样
 
 ```
-侧栏底部（Settings 旁边）
-┌──────────────────────────┐
-│  🖼 开启生图模式           │  ← 点击
-└──────────────────────────┘
-        ↓
+侧栏 —— 排在「插件」「自动化任务」下面，最后一行
+  ┌────────────────────────────┐
+  │  ＋   新会话                 │
+  ├────────────────────────────┤
+  │  ◇   插件                   │
+  │  🕘   自动化任务              │
+  │  🖼   开启生图模式    ← 新增  │
+  └────────────────────────────┘
+        ↓ 点击
   全屏黑底播放过场视频（assets/transition.webm）
   结束 / 出错 / 超时 / 点击画面 → 立即继续
         ↓
@@ -75,21 +79,25 @@ dsh --profile plugindev --dump-config | grep -A10 'dsh-posterflow-ai'
 | 半边 | 产物 | 做什么 |
 | --- | --- | --- |
 | 宿主（Node） | `lib/index.js` | 注册两条 HTTP 路由：把**过场视频**按需发给浏览器（支持 Range/206/416/HEAD），以及把**部署期配置**以 JSON 递给浏览器 |
-| 浏览器 | `lib/client.js` | 惰性 CJS 表：注册 `sidebar.footer.action` 里的按钮，点击后取配置 → 播视频 → 跳转 |
+| 浏览器 | `lib/client.js` | 惰性 CJS 表，注册**两处**：侧栏主列表最后一行（`sidebar.panellist`，order 100）与同 id 的主面板（`main` keyed `posterflow-ai`），由后者完成过场与跳转 |
 
-三个值得说明的取舍：
+四个值得说明的取舍：
 
-1. **视频走路由，不内联进 JS。** 视频 2.66 MiB，base64 内联会让 client bundle 涨到 ~3.6 MB 并在每次页面启动时下载。
+1. **侧栏那一行不是普通按钮槽。** `sidebar.panellist` 的每个 id 对应**一个主面板**——「插件」「自动化任务」就是
+   `plugins`(order 0) 与 `schedules`(order 10)。侧栏自己渲染按钮、从注册元数据取 `label`，
+   我们的组件只负责**图标**（owner props 只有 `size` / `active`）。所以点这一行会切到同 id 的面板：
+   我们同时注册 `main` keyed `posterflow-ai` 来承载「过场 → 跳转」，并用 order 100 排在最后一行。
+2. **视频走路由，不内联进 JS。** 视频 2.66 MiB，base64 内联会让 client bundle 涨到 ~3.6 MB 并在每次页面启动时下载。
    走 `ctx.webServer.register({ kind: 'exact', path: '/posterflow-ai/transition.webm' })` 之后，浏览器只在真正要播时才拉它，
    而且 `Range` 请求能得到 206（视频 seek 依赖这个）。
-2. **client 半边读不到宿主的 `Config`**，所以宿主用 `/posterflow-ai/config.json` 把它递过去。
-   这条路由是 `Cache-Control: no-store`，改配置重启即生效。client 侧读取失败时回落到内置默认值，**绝不因此让按钮失灵**。
-3. **不 `inject: ['webServer']`。** 用 `ctx.get('webServer')` 读取并降级：这样插件在 headless 之类的 profile 里
+3. **client 半边读不到宿主的 `Config`**，所以宿主用 `/posterflow-ai/config.json` 把它递过去。
+   这条路由是 `Cache-Control: no-store`，改配置重启即生效。client 侧读取失败时回落到内置默认值，**绝不因此让入口失灵**。
+4. **不 `inject: ['webServer']`。** 用 `ctx.get('webServer')` 读取并降级：这样插件在 headless 之类的 profile 里
    也能正常加载（只是不注册路由），而不是因为依赖缺失一直等在那里。浏览器半边本来就只存在于 Web 界面。
 
-按钮注册进 `sidebar.footer.action`（list / root scope，`{id, order, label}`），
-`order: 20`，与既有的 `cordis-panel`、dsh-context 的 `context-overview` 共存。
-折叠成 56px 窄栏时只显示图标（owner 会传 `wide: false`）。
+> 桌面版（Electron）**确实**有 `ctx.webServer`：desktop profile 引用了 `@deepseek-ai/dsh-web-app`，
+> 其 patch 层里就有 `- id: webserver / name: '@deepseek-ai/dsh-host-webserver'`（19387 端口就是它）。
+> 所以过场视频在桌面版同样走路由，不需要内联。
 
 ## 开发
 
@@ -107,7 +115,7 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
 | --- | --- |
 | `typecheck` | 严格 TS，含 client 半边的惰性 CJS 形态 |
 | `lint` | oxlint |
-| `test` | **23 个用例**：`tests/route.test.ts` 纯逻辑（Range 解析、路径逃逸防护）；`tests/webserver.test.ts` **真 WebServer + 真 HTTP 请求** |
+| `test` | **32 个用例**，三个文件：`tests/route.test.ts` 纯逻辑（Range 解析、路径逃逸防护）；`tests/registration.test.ts` 侧栏「最后一行 + 同 id 主面板」的摆放契约；`tests/webserver.test.ts` **真 WebServer + 真 HTTP 请求** |
 | `build` | tsdown 产出 `lib/index.js`（ESM）+ `lib/client.js`（IIFE 普通脚本） |
 | `test:artifact` | 构建产物挂真 WebServer，真请求验证路由可用、卸载即撤 |
 | `test:client` | 在 Node 里执行 `lib/client.js`：**执行期 0 次模块请求、0 次 DOM 变更**（证明惰性契约），materialize 后导出 `name/inject/apply` |
@@ -120,8 +128,9 @@ pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无�
 - **只支持 Web 界面。** 浏览器半边只在 Web 外壳里加载；`desktop`/headless 里只有宿主半边（不会注册路由）。
 - **改 `dsh.client` 声明需要重启**（扫描结果缓存到重启）；只有产物字节变化能在线生效。
 - 过场视频是**内置资源**，不能填任意 HTTP 地址（`videoFile` 被限制在包目录内）。
-- 按钮位置固定为侧栏底部；要换挂载点改 `src/client.ts` 里的 Slot key 即可
-  （可用挂载点见参考工作区的 `reference/live-slot-catalog.md`，共 90 个）。
+- 入口固定在侧栏主列表**最后一行**（`PANEL_ORDER = 100`）。要挪位置：改这个 order 决定排第几行；
+  或换成 `sidebar.footer.action` 这类按钮槽（那时只需注册一处，不再需要 `main` 面板）。
+  可用挂载点见参考工作区的 `reference/live-slot-catalog.md`（90 个）。
 
 ## 许可
 

@@ -33,10 +33,14 @@ export const ROUTE_PREFIX = '/posterflow-ai'
 export const VIDEO_ROUTE = `${ROUTE_PREFIX}/transition.webm`
 /** 运行时配置的路由。 */
 export const CONFIG_ROUTE = `${ROUTE_PREFIX}/config.json`
-/** client 半边注册到 Slot 时使用的条目 id。 */
-export const SLOT_ACTION_ID = 'posterflow-ai'
-/** client 半边注册的目标 Slot。 */
-export const SLOT_KEY = 'sidebar.footer.action'
+/** 侧栏主列表那一行的 id，同时也是 `main` 面板的 key。 */
+export const PANEL_ID = 'posterflow-ai'
+/** 侧栏主列表（「插件」「自动化任务」所在的那一列）。 */
+export const SLOT_PANEL_LIST = 'sidebar.panellist'
+/** 主面板 keyed 槽，承载过场与跳转。 */
+export const SLOT_MAIN = 'main'
+/** 排在最后一行：既有的 plugins = 0、schedules = 10。 */
+export const PANEL_ORDER = 100
 
 /** 部署期配置。 */
 export interface Config {
