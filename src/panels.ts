@@ -270,6 +270,8 @@ interface VideoNode extends DomNode {
   muted: boolean
   volume: number
   playsInline: boolean
+  currentTime: number
+  paused: boolean
   play(): Promise<void> | undefined
 }
 
@@ -336,6 +338,10 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         let settled = false
         let timer: ReturnType<typeof setTimeout> | undefined
         let audioVerdict: AudioVerdict = 'ok'
+        let startPrompt: DomNode | undefined
+        let retryTimer: ReturnType<typeof setInterval> | undefined
+        let retries = 0
+        let playErrorName: string | undefined
         const overlay = document.createElement('div')
         const video = document.createElement('video') as unknown as VideoNode
 
@@ -373,6 +379,17 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           } catch {
             /* 忽略 */
           }
+          if (retryTimer !== undefined) clearInterval(retryTimer)
+          // 收尾判定：真的响了吗（没播起来 / 仍是静音 / 音量为 0 都算没声音）
+          if (audioVerdict === 'ok' && (video.muted || video.volume === 0 || video.currentTime === 0)) {
+            audioVerdict = 'muted'
+          }
+          console.log('[posterflow-ai] audio', {
+            verdict: audioVerdict,
+            playErrorName,
+            muted: video.muted,
+            currentTime: video.currentTime,
+          })
           resolve({ audio: audioVerdict })
         }
 
@@ -436,17 +453,88 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           }, 700)
         })
 
-        const startPlayback = (): void => {
-          const played = video.play()
-          if (played !== undefined && typeof played.catch === 'function') {
-            played.catch(() => {
-              // 带声音起播被策略拒绝 → 静音重试（保证画面一定播出来），并给出开启声音的入口
-              video.muted = true
-              const retry = video.play()
-              if (retry !== undefined && typeof retry.catch === 'function') retry.catch(finish)
-              if (wantsSound) showSoundButton()
-            })
+        /**
+         * 提示：浏览器要求先有一次交互才允许自动播放声音。
+         * 点它（或点画面任意处）就会以**有声**方式开始播放。
+         */
+        const showStartPrompt = (): void => {
+          if (startPrompt !== undefined) return
+          const button = document.createElement('button')
+          button.textContent = '🔊 点击任意处开始播放'
+          button.title = '浏览器要求先有一次交互才允许自动播放声音'
+          button.setAttribute('type', 'button')
+          Object.assign(button.style, {
+            position: 'absolute',
+            bottom: '32px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: '1',
+            padding: '12px 22px',
+            border: '1px solid rgba(255,255,255,0.45)',
+            borderRadius: '999px',
+            background: 'rgba(0,0,0,0.6)',
+            color: '#fff',
+            font: 'inherit',
+            fontSize: '15px',
+            cursor: 'pointer',
+          })
+          button.addEventListener('click', (event) => {
+            event?.stopPropagation?.()
+            tryPlay()
+          })
+          startPrompt = button
+          try {
+            overlay.appendChild(button)
+          } catch {
+            /* 忽略 */
           }
+        }
+
+        const clearStartPrompt = (): void => {
+          try {
+            startPrompt?.remove()
+          } catch {
+            /* 忽略 */
+          }
+          startPrompt = undefined
+        }
+
+        /**
+         * 真正开始播放。
+         *
+         * **绝不为"能播出来"而静音**——这是需求。带声音起播被拒时只做三件事：
+         * 提示用户点一下（那时必定有声）、等任意交互再试、自己每 250ms 重试（最多 3 秒）。
+         */
+        const tryPlay = (): void => {
+          if (settled) return
+          const played = video.play()
+          if (played === undefined) return
+          played.then(
+            () => clearStartPrompt(),
+            (error: unknown) => {
+              playErrorName = (error as { name?: string } | undefined)?.name ?? 'unknown'
+              console.log('[posterflow-ai] audible play rejected:', playErrorName)
+              showStartPrompt()
+            },
+          )
+        }
+
+        const startPlayback = (): void => {
+          tryPlay()
+          retryTimer = setInterval(() => {
+            if (settled) {
+              if (retryTimer !== undefined) clearInterval(retryTimer)
+              return
+            }
+            if (retries >= 12) {
+              if (retryTimer !== undefined) clearInterval(retryTimer)
+              // 试了 3 秒仍起不来（且没人点击）：不静音硬播，直接放行，别让人对着黑屏等
+              if (video.currentTime === 0) finish()
+              return
+            }
+            retries += 1
+            if (video.paused) tryPlay()
+          }, 250)
         }
 
         video.muted = config.muted
@@ -550,7 +638,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       void launcher.launch().then((outcome) => {
         console.log('[posterflow-ai] launch outcome', outcome, diagnostics)
         // 只在**真的出问题**时追加一句原因；正常情况下标题就是「生图模式已开启」
-        if (outcome.audio === 'muted') setSuffix('（声音被浏览器静音了）')
+        if (outcome.audio === 'muted') setSuffix('（无声音：浏览器要求先交互一次）')
         else if (outcome.audio === 'undecoded') setSuffix('（音轨未解码）')
       })
     }, [])
