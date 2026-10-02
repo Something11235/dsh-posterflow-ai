@@ -1,0 +1,46 @@
+name: Release
+
+# 打 tag（v0.1.0 这种）即发布到 npm。
+# 预发布请用 npm dist-tag：pnpm publish --tag next ...
+# （内核自身就是这么做的：@deepseek-ai/dsh-tools 的 next=0.2.0-rc.2，latest 仍是 0.0.1-rc.1）
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # npm provenance / trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify before publishing
+        run: |
+          pnpm run typecheck
+          pnpm run lint
+          pnpm run test
+          pnpm run build
+          pnpm run test:artifact
+
+      - name: Publish
+        run: pnpm publish --access public --provenance --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

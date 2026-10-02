@@ -1,0 +1,23 @@
+# 本插件的 bundle patch 层。
+#
+# package.json 的 `dsh.bundle.patch` 指向这个文件：DSH 的 loader 会把这里的行
+# 合并进 profile 的组合树（顺序在 bundle 层之后、用户自己的 cordis.patch.yml 之前）。
+#
+# 语法要点：
+#   - 顶层是 YAML 数组；`insert` 追加行，或按 `id` 覆盖已存在的行
+#   - `config` 是**整行替换**而不是深合并：这里没写的字段走 schema 默认值
+#   - `name` 必须与安装的包名一致，否则 loader 只 warn 然后跳过这一行
+#
+# 下面写的是默认值（等于不配置）。要改成自己的地址，在**你自己的 profile** 的
+# cordis.patch.yml 里按 id 覆盖同样这几行即可。
+- insert:
+    - id: dsh-posterflow-ai
+      name: dsh-posterflow-ai
+      config:
+        targetUrl: https://www.posterflow-ai.xyz/
+        buttonLabel: 开启生图模式
+        openIn: new-tab
+        transition: video
+        videoFile: assets/transition.webm
+        muted: true
+        maxWaitMs: 8000

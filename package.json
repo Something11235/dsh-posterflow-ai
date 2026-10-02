@@ -1,0 +1,84 @@
+{
+  "name": "dsh-posterflow-ai",
+  "version": "0.1.0",
+  "description": "DSH plugin: a PosterFlow launcher in the Web sidebar — click 开启生图模式, play a transition video, then open the site.",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "author": "Something11235",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Something11235/dsh-posterflow-ai.git"
+  },
+  "homepage": "https://github.com/Something11235/dsh-posterflow-ai#readme",
+  "bugs": {
+    "url": "https://github.com/Something11235/dsh-posterflow-ai/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "posterflow",
+    "launcher",
+    "sidebar"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:artifact": "node scripts/verify-artifact.mjs",
+    "test:client": "node scripts/verify-client-bundle.mjs lib/client.js",
+    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:artifact && pnpm run test:client"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@types/node": "^26.6.4",
+    "oxlint": "^1.86.0",
+    "tsdown": "^0.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

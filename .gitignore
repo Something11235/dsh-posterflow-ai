@@ -1,0 +1,28 @@
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# 本机专属的 npm 配置**不要**提交：里面的 `proxy=` / `noproxy=*` 是为了绕开本机失效的
+# 本地代理，但对企业代理环境的使用者是**破坏性**的（会把他们的代理一并关掉）。
+# 文件留在本地即可，pnpm 按"跑命令的目录"读取它。
+.npmrc
+
+# 构建产物：本模板把 lib/ 提交进仓库，并**刻意不声明 prepare 脚本**。
+# 原因（本机实测，不是推测）：`dsh plugin add "github:owner/repo#main"` 会走
+# pnpm 的 git 依赖路径，只要包里有 prepare 就硬失败：
+#   ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED
+# 用户必须先把它加进 profile 的 pnpm-workspace.yaml allowBuilds 才能装 —— 对
+# "一行命令安装"来说是不可接受的摩擦。提交 lib/ 就已经够用。
+#
+# 若你更希望"用户侧构建"：取消下面一行注释，并在 package.json 里加回
+# "prepare": "tsdown"，同时在 README 里明确告诉用户需要 allowBuilds。
+# lib/
+
+coverage/
+.vitest/
+dist/
+*.log
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
