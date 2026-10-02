@@ -2,6 +2,9 @@
 
 A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) plugin: a **PosterFlow launcher** in the Web sidebar. Click **开启生图模式**, watch a transition animation that **fills the whole window**, then land on [PosterFlow](https://www.posterflow-ai.xyz/).
 
+[![npm version](https://img.shields.io/npm/v/dsh-posterflow-ai.svg)](https://www.npmjs.com/package/dsh-posterflow-ai)
+[![license](https://img.shields.io/npm/l/dsh-posterflow-ai.svg)](./LICENSE)
+
 > 中文文档（默认）：[README.md](./README.md)
 
 ## What it does

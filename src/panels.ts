@@ -283,6 +283,8 @@ declare const window: WindowLike
 declare const document: {
   createElement(tag: string): DomNode
   body: DomNode
+  addEventListener(type: string, listener: () => void): void
+  removeEventListener(type: string, listener: () => void): void
 }
 declare const console: { log(...args: unknown[]): void }
 
@@ -337,6 +339,20 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         const overlay = document.createElement('div')
         const video = document.createElement('video') as unknown as VideoNode
 
+        /** 解除静音。自动播放策略只认用户手势，所以下面所有交互回调都走它。 */
+        const unmute = (): void => {
+          video.muted = false
+          video.volume = 1
+        }
+
+        /**
+         * 过场期间**任意点击 / 按键**都算用户手势 → 顺便把声音打开。
+         * 这是最可靠的一条：Electron 拒绝了带声音起播时，用户的任何一次交互都能救回声音。
+         */
+        const onUserGesture = (): void => {
+          if (video.muted) unmute()
+        }
+
         const finish = (): void => {
           if (settled) return
           settled = true
@@ -350,6 +366,12 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
             overlay.remove()
           } catch {
             /* 已经脱离文档 */
+          }
+          try {
+            document.removeEventListener('pointerdown', onUserGesture)
+            document.removeEventListener('keydown', onUserGesture)
+          } catch {
+            /* 忽略 */
           }
           resolve({ audio: audioVerdict })
         }
@@ -384,8 +406,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           })
           button.addEventListener('click', (event) => {
             event?.stopPropagation?.() // 别触发"点击跳过"
-            video.muted = false
-            video.volume = 1
+            unmute()
             button.remove()
             soundButton = undefined
           })
@@ -402,12 +423,11 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
          * 顺手判定声音状态：`muted` = 解不掉静音；`undecoded` = 音轨字节数为 0（编码/解码问题）。
          */
         video.addEventListener('playing', () => {
-          if (wantsSound && video.muted) {
-            video.muted = false
-            video.volume = 1
-          }
+          if (wantsSound && video.muted) unmute()
           setTimeout(() => {
             if (video.muted) {
+              // 仍然是静音（不管是策略拦的还是配置要求的）：始终给出一个必定能出声的入口
+              showSoundButton()
               audioVerdict = 'muted'
               return
             }
@@ -460,6 +480,9 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         })
         // 点一下就能跳过
         overlay.addEventListener('click', finish)
+        // 任意点击 / 按键算用户手势（用来把声音救回来）
+        document.addEventListener('pointerdown', onUserGesture)
+        document.addEventListener('keydown', onUserGesture)
         overlay.appendChild(video)
         document.body.appendChild(overlay)
 

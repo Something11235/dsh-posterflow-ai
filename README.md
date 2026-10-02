@@ -2,6 +2,9 @@
 
 一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件：在 Web 界面侧栏加一个「**开启生图模式**」入口，点击后**铺满整个窗口**播放一段过场动画，然后跳转到 [PosterFlow](https://www.posterflow-ai.xyz/)。
 
+[![npm version](https://img.shields.io/npm/v/dsh-posterflow-ai.svg)](https://www.npmjs.com/package/dsh-posterflow-ai)
+[![license](https://img.shields.io/npm/l/dsh-posterflow-ai.svg)](./LICENSE)
+
 > English: [README.en.md](./README.en.md)
 
 ## 它长什么样
@@ -27,14 +30,23 @@
 
 ## 安装
 
-三种方式，按"对方环境"挑：
+四种方式，按"对方环境"挑：
 
 | 方式 | 地址 / 命令 | 需要 `git` | 说明 |
 | --- | --- | --- | --- |
-| **源码压缩包** | GitHub → **Code → Download ZIP** | **不需要** | 仓库里已提交构建产物 `lib/`，解压即可装，**不用装 Node、不用编译**（已实测） |
-| Git 仓库 | `github:Something11235/dsh-posterflow-ai#main` | **需要** | 机器上有 git 时最省事；界面里粘这个地址 |
-| npm 包名 | `dsh-posterflow-ai` | 不需要 | **发布后任何人只输包名即可**（见文末「发布到 npm」） |
+| **npm 包名**（推荐） | `dsh-posterflow-ai` | **不需要** | 已发布到 npm 并实测通过：界面里只输这一串即可 |
+| 源码压缩包 | GitHub → **Code → Download ZIP** | 不需要 | 仓库带构建产物 `lib/`，解压即可装（已实测） |
+| Git 仓库 | `github:Something11235/dsh-posterflow-ai#main` | **需要** | 机器上有 git 时可用；无 git 会报 `'git' 不是内部或外部命令` |
 | 本地包 | 指向本地目录 / `.tgz` | 不需要 | 内网、无 git 的机器用这个 |
+
+> **刚发布不久时的特殊情况**：pnpm 11 带"最小发布年龄"供应链保护，**极新**的版本可能被解析策略跳过
+> （现象是装到了 `0.0.0-stage` 这类占位版并报 tarball 校验错）。这时**指定版本号**即可，实测有效：
+>
+> ```sh
+> dsh plugin --profile <你的profile> add "dsh-posterflow-ai@0.1.0"
+> ```
+>
+> 等版本"变老"之后，裸包名也会恢复正常（本机实测裸包名随后即安装成功）。
 
 > **安装失败排查**
 >
