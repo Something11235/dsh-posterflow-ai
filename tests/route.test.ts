@@ -80,6 +80,7 @@ describe('buildClientConfig', () => {
     const payload = buildClientConfig(
       {
         targetUrl: 'https://example.test/',
+        videoSource: 'route',
         buttonLabel: '开启',
         openIn: 'same-tab',
         transition: 'video',
@@ -90,6 +91,7 @@ describe('buildClientConfig', () => {
     )
     expect(payload).toEqual({
       targetUrl: 'https://example.test/',
+      videoSource: 'route',
       buttonLabel: '开启',
       openIn: 'same-tab',
       transition: 'video',

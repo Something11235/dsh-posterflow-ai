@@ -1,47 +1,50 @@
 # dsh-posterflow-ai
 
-A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) plugin: a **PosterFlow launcher** in the Web sidebar. Click **开启生图模式**, watch a transition video, land on [PosterFlow](https://www.posterflow-ai.xyz/).
+一个 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）插件：在 Web 界面侧栏加一个「**开启生图模式**」入口，点击后**铺满整个窗口**播放一段过场动画，然后跳转到 [PosterFlow](https://www.posterflow-ai.xyz/)。
 
-> Chinese version: [README.zh.md](./README.zh.md)
+> English: [README.en.md](./README.en.md)
 
-## What it does
+## 它长什么样
 
 ```
-sidebar — below 插件 / 自动化任务, as the last row
+侧栏 —— 排在「插件」「自动化任务」下面，最后一行
   ┌────────────────────────────┐
-  │  ＋   New session            │
+  │  ＋   新会话                 │
   ├────────────────────────────┤
-  │  ◇   Plugins                 │
-  │  🕘   Scheduled tasks         │
-  │  🖼   开启生图模式    ← added │
+  │  ◇   插件                   │
+  │  🕘   自动化任务              │
+  │  🖼   开启生图模式    ← 新增  │
   └────────────────────────────┘
-        ↓ click
-  full-screen transition video (assets/transition.webm)
-  ended / errored / timed out / clicked → continue immediately
+        ↓ 点击
+  过场动画铺满整个 DSH 窗口（object-fit: cover）
+  结束 / 出错 / 超时 / 点击画面 → 立即继续
         ↓
-  open https://www.posterflow-ai.xyz/ (new tab by default)
+  打开 https://www.posterflow-ai.xyz/（默认新标签页）
 ```
 
-## Install
+## 安装
 
 ```sh
-# from GitHub (also gets auto-listed by the community marketplace)
+# 从 GitHub 安装（推荐，会被社区市场自动收录）
 dsh plugin --profile web add "github:Something11235/dsh-posterflow-ai#main"
 
-# local development
-dsh plugin --profile plugindev add link:/absolute/path/to/dsh-posterflow-ai
+# 本地开发
+dsh plugin --profile plugindev add link:/绝对/路径/dsh-posterflow-ai
 ```
 
-> **Desktop app note**: the `desktop` profile is owned exclusively by the Electron app and the CLI
-> refuses to touch it. Install through the app's own *Settings → Plugins* UI, or edit
-> `package.json` + `cordis.patch.yml` under `$DSH_HOME/profiles/desktop/` by hand — then **restart**.
-> A restart is required because `dsh.client` scan results (including the negative "not a client
-> package" verdict) are cached until restart.
+确认组合树：
 
-## Configuration
+```sh
+dsh --profile plugindev --dump-config | grep -A10 'dsh-posterflow-ai'
+```
 
-Override the row by `id` in your profile's `cordis.patch.yml`. `config` is a **whole-row
-replacement, not a deep merge** — omitted fields fall back to their schema default.
+> **桌面版注意**：`desktop` profile 由 Electron 应用独占，CLI 会拒绝操作它。
+> 桌面版请用应用内「设置 → 插件 → 添加插件」粘贴仓库地址安装，然后**完全退出应用再打开**
+> （`dsh.client` 声明的扫描结果会缓存到重启）。
+
+## 配置
+
+在你自己 profile 的 `cordis.patch.yml` 里按行 `id` 覆盖。`config` 是**整行替换**、不是深合并——没写的字段回落到 schema 默认值。
 
 ```yaml
 - id: dsh-posterflow-ai
@@ -49,94 +52,91 @@ replacement, not a deep merge** — omitted fields fall back to their schema def
   config:
     targetUrl: https://www.posterflow-ai.xyz/
     buttonLabel: 开启生图模式
-    openIn: new-tab        # or same-tab
-    transition: video      # or none (navigate immediately)
-    videoFile: assets/transition.webm
+    openIn: new-tab        # 或 same-tab
+    transition: video      # 或 none（点击后直接跳转）
+    videoSource: inline    # 或 route
     muted: true
     maxWaitMs: 8000
 ```
 
-| Field | Type | Default | Meaning |
+| 字段 | 类型 | 默认 | 含义 |
 | --- | --- | --- | --- |
-| `targetUrl` | string | `https://www.posterflow-ai.xyz/` | Where to land after the transition |
-| `buttonLabel` | string | `开启生图模式` | Button text |
-| `openIn` | `new-tab` \| `same-tab` | `new-tab` | New tab (keeps your session UI) or navigate away |
-| `transition` | `video` \| `none` | `video` | Play the transition video |
-| `videoFile` | string | `assets/transition.webm` | Video path **inside the package** |
-| `muted` | boolean | `true` | Muting is the only reliable way to autoplay |
-| `maxWaitMs` | integer 0–60000 | `8000` | Give up on the video after this and just navigate |
+| `targetUrl` | string | `https://www.posterflow-ai.xyz/` | 过场结束后跳转的地址 |
+| `buttonLabel` | string | `开启生图模式` | 按钮文案 |
+| `openIn` | `new-tab` \| `same-tab` | `new-tab` | 新标签页打开（不会丢掉当前会话界面）或当前页跳转 |
+| `transition` | `video` \| `none` | `video` | 是否播放过场视频 |
+| `videoSource` | `inline` \| `route` | `inline` | `inline` = 用产物内联的视频（**一定能播**）；`route` = 用宿主 HTTP 路由（仅在页面确由 `ctx.webServer` 提供服务时有效） |
+| `videoFile` | string | `assets/transition.webm` | `route` 模式下要提供的包内文件 |
+| `muted` | boolean | `true` | 先静音起播；设 `false` 时等播放开始后再取消静音 |
+| `maxWaitMs` | integer 0–60000 | `8000` | 视频最长等待；超时直接跳转，不让用户卡在过场里 |
 
-## How it works (two halves)
+## 它是怎么工作的（两层）
 
-A **dual-face plugin**; the halves do different jobs:
+这是一个**双面插件**：
 
-| Half | Artefact | Job |
+| 半边 | 产物 | 做什么 |
 | --- | --- | --- |
-| Host (Node) | `lib/index.js` | Registers two HTTP routes: serves the **transition video** on demand (Range/206/416/HEAD), and hands the **deployment config** to the browser as JSON |
-| Browser | `lib/client.js` | A lazy-CJS table registering **two** things: the last row of the sidebar list (`sidebar.panellist`, order 100) and the matching main panel (`main` keyed `posterflow-ai`), which runs the transition and the redirect |
+| 宿主（Node） | `lib/index.js` | 只注册一条配置路由，把部署期配置以 JSON 递给浏览器（另保留一条可选视频路由给 `videoSource: route`） |
+| 浏览器 | `lib/client.js` | 惰性 CJS 表，注册**两处**：侧栏主列表最后一行（`sidebar.panellist`，order 100）与同 id 的主面板（`main` keyed `posterflow-ai`），由后者播放内联过场并跳转 |
 
-Four deliberate choices:
+六个值得说明的取舍：
 
-1. **That sidebar row is not a plain button slot.** Every id in `sidebar.panellist` maps to **a main panel** —
-   插件 / 自动化任务 are `plugins` (order 0) and `schedules` (order 10). The sidebar renders the button and reads
-   its `label` from the registration metadata; our component only draws the **icon** (owner props are just
-   `size` / `active`). So clicking the row switches to the panel with the same id: we also register
-   `main` keyed `posterflow-ai` to run “transition → redirect”, and use order 100 to be the last row.
-2. **The video is served, not inlined.** It is 2.66 MiB; base64-inlining it would push the client
-   bundle to ~3.6 MB downloaded on every page boot. Through
-   `ctx.webServer.register({ kind: 'exact', path: '/posterflow-ai/transition.webm' })` the browser
-   fetches it only when it actually plays, and `Range` requests get a proper 206 (video seeking
-   depends on it).
-3. **The client half cannot read the host's `Config`**, so the host exposes
-   `/posterflow-ai/config.json` (`Cache-Control: no-store`). If the fetch fails the client falls back
-   to built-in defaults — the entry never stops working.
-4. **No `inject: ['webServer']`.** It reads `ctx.get('webServer')` and degrades, so the plugin also
-   loads in non-web profiles (it simply registers no routes). The browser half only exists in the
-   Web shell anyway.
+1. **侧栏那一行不是普通按钮槽。** `sidebar.panellist` 的每个 id 对应**一个主面板**——「插件」「自动化任务」就是
+   `plugins`(order 0) 与 `schedules`(order 10)。侧栏自己渲染按钮、从注册元数据取 `label`，
+   我们的组件只负责**图标**（owner props 只有 `size` / `active`）。所以点这一行会切到同 id 的面板：
+   我们同时注册 `main` keyed `posterflow-ai` 来承载「过场 → 跳转」，并用 order 100 排在最后一行。
+2. **视频内联在产物里（默认），不依赖任何 HTTP 路由。** 这是踩坑后的修正：桌面版 GUI 的
+   `127.0.0.1:19387` **不是** `ctx.webServer` 的路由面——实测连内核自己的 `/plugins/...` 都返回 404，
+   所以"宿主注册路由、页面去取"这条路在桌面版走不通，视频必然加载失败并立刻放行跳转
+   （表现就是"完全没有播放视频"）。
+   现在源片先用 ffmpeg 压到 **1080 宽 / CRF 48 / 24fps / 24kbps 单声道**（2.66 MiB → **458 KB**），
+   再由 [`scripts/embed-video.mjs`](scripts/embed-video.mjs) 生成 data URI 内联进 `lib/client.js`（产物约 **659 KB**）。
+   换来的是**一定能播**：不依赖端口、协议、CORS 或路由。
+3. **过场铺满整个窗口。** 覆盖层 `position: fixed; inset: 0` + 视频 `width/height: 100%`、`object-fit: cover`，
+   所以是整窗填充而不是居中带黑边的信箱式播放。先静音起播（自动播放的唯一可靠保证），
+   配置要求有声时等 `playing` 之后再取消静音。
+4. **一次点击只跑一次。** React 严格模式会重复执行 effect、点击也可能被重复派发；没有闸门就会
+   **播两遍视频、开两个标签页**（就是"出现两次相同的界面"）。`createLauncher()` 用 1.5 秒窗口 +
+   进行中标志去重，并有专门的测试（[`tests/launcher.test.ts`](tests/launcher.test.ts)）钉住。
+5. **client 半边读不到宿主的 `Config`**，所以宿主用 `/posterflow-ai/config.json` 把它递过去
+   （`Cache-Control: no-store`）。client 侧读取失败时回落到内置默认值，而默认值就是"内联视频"，
+   所以**入口永远不会因为路由不通而失灵**。
+6. **不 `inject: ['webServer']`。** 用 `ctx.get('webServer')` 读取并降级，这样插件在 headless 之类的
+   profile 里也能正常加载（只是不注册路由），而不是因为依赖缺失一直等在那里。
 
-> The desktop (Electron) app **does** have `ctx.webServer`: the desktop profile includes
-> `@deepseek-ai/dsh-web-app`, whose patch layer carries
-> `- id: webserver / name: '@deepseek-ai/dsh-host-webserver'` (that is what listens on port 19387).
-> So the transition video is served over the route there too, with nothing inlined.
-
-## Development
+## 开发
 
 ```sh
 pnpm install
+pnpm run embed           # 由 assets/transition.webm 生成内联 data URI 模块
 pnpm run typecheck && pnpm run lint && pnpm run test
 pnpm run build
-pnpm run test:artifact   # host artefact on a REAL WebServer, with REAL HTTP requests
-pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no browser needed)
+pnpm run test:artifact   # 宿主产物：真 WebServer 上真发 HTTP 请求
+pnpm run test:client     # 浏览器产物：惰性 CJS 契约（纯 Node，无需浏览器）
 ```
 
-### Six gates
+### 七道质量门
 
-| Gate | Covers |
+| 门 | 覆盖什么 |
 | --- | --- |
-| `typecheck` | Strict TS, including the client half's lazy-CJS shape |
-| `lint` | oxlint |
-| `test` | **32 cases** across three files: `tests/route.test.ts` pure logic (Range parsing, path-escape guard); `tests/registration.test.ts` the sidebar/panel placement contract; `tests/webserver.test.ts` a **real WebServer with real HTTP requests** |
-| `build` | tsdown → `lib/index.js` (ESM) + `lib/client.js` (IIFE plain script) |
-| `test:artifact` | The built host artefact mounted on a real WebServer: routes answer, and vanish on dispose |
-| `test:client` | Executes the built `lib/client.js` in Node: **0 module requests and 0 DOM mutations at execution** (that is the lazy contract), and `name/inject/apply` after materialization |
+| `verify:embed` | 内联视频模块与 `assets/transition.webm` 一致（防止改了视频忘了重新生成） |
+| `typecheck` | 严格 TS，含 client 半边的惰性 CJS 形态 |
+| `lint` | oxlint（生成的视频模块已排除） |
+| `test` | **39 个用例**，四个文件：纯逻辑（Range 解析、路径逃逸防护）、注册契约（最后一行 + 同 id 主面板）、编排闸门（单次触发）、真 WebServer + 真 HTTP 请求 |
+| `build` | tsdown 产出 `lib/index.js`（ESM）+ `lib/client.js`（IIFE 普通脚本，约 659 KB） |
+| `test:artifact` | 构建产物挂真 WebServer：路由可用、卸载即撤 |
+| `test:client` | 在 Node 里执行 `lib/client.js`：执行期 **0 次模块请求、0 次 DOM 变更**（惰性契约），materialize 后导出 `name/inject/apply` |
 
-The most interesting cases in `tests/webserver.test.ts`: a Range request returns 206 whose first four
-bytes are the WebM/EBML magic; an out-of-range Range returns 416; `HEAD` returns headers only; and a
-`videoFile` that tries to escape the package directory is **refused** rather than read.
+## 已知限制
 
-## Known limitations
+- **只支持 Web 界面。** 浏览器半边只在 Web 外壳里加载；`desktop`/headless 里只有宿主半边。
+- **改 `dsh.client` 声明需要重启**（扫描结果缓存到重启）；只有产物字节变化能在线生效。
+- **过场视频是构建期内联的**，改视频要重新跑 `pnpm run embed` 并重新构建（`verify:embed` 会在 CI 里拦住不同步）。
+- **跳转走外部浏览器**（默认新标签页）。"跳进 DSH 内置浏览器"需要 `sidebarRightTabs` 服务的契约，
+  该包未随包发布类型定义，目前**未实现**。
+- 入口固定在侧栏主列表**最后一行**（`PANEL_ORDER = 100`）。要挪位置改这个 order，或换成
+  `sidebar.footer.action` 这类按钮槽（那时只需注册一处）。可用挂载点见参考工作区的 `reference/live-slot-catalog.md`（90 个）。
 
-- **Web only.** The browser half loads only in the Web shell; in `desktop`/headless only the host half
-  runs (no routes registered).
-- **Changing the `dsh.client` declaration needs a restart** (scan results are cached); only artefact
-  bytes changes can go live.
-- The transition video is a **bundled asset** — you cannot point `videoFile` at an arbitrary HTTP URL,
-  and it is confined to the package directory.
-- The entry sits at the **last row** of the sidebar list (`PANEL_ORDER = 100`). To move it, change that
-  order, or switch to a button-style slot such as `sidebar.footer.action` (then only one registration is
-  needed and the `main` panel can go). The reference workspace lists 90 live mount points in
-  `reference/live-slot-catalog.md`.
-
-## License
+## 许可
 
 MIT

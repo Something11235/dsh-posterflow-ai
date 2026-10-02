@@ -16,6 +16,8 @@ export interface ParsedRange {
 export interface ClientConfig {
   /** 过场结束后要跳转的地址。 */
   targetUrl: string
+  /** 视频来源：`inline` = 用产物里内联的视频（默认）；`route` = 用宿主 HTTP 路由。 */
+  videoSource: 'inline' | 'route'
   /** 按钮文案。 */
   buttonLabel: string
   /** 跳转方式。 */
@@ -119,6 +121,7 @@ export function resolveInsidePackage(packageRoot: string, relativePath: string):
 export function buildClientConfig(
   config: {
     targetUrl: string
+    videoSource: 'inline' | 'route'
     buttonLabel: string
     openIn: 'new-tab' | 'same-tab'
     transition: 'video' | 'none'
@@ -129,6 +132,7 @@ export function buildClientConfig(
 ): ClientConfig {
   return {
     targetUrl: config.targetUrl,
+    videoSource: config.videoSource,
     buttonLabel: config.buttonLabel,
     openIn: config.openIn,
     transition: config.transition,

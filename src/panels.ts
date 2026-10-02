@@ -3,11 +3,16 @@
  *
  * 为什么把逻辑放在这里而不是直接写在 `client.ts` 里：
  * `client.ts` 必须是"执行即注册工厂"的脚本形态，没法被测试导入。
- * 抽成模块后：① 注册契约可单测；② 构建时会被 inline 进 `lib/client.js`，
+ * 抽成模块后：① 注册契约与单次触发闸门可单测；② 构建时会被 inline 进 `lib/client.js`，
  * 产物依然是零 npm 依赖的普通脚本。
  *
- * 唯一的运行时依赖是注入的 React（模块表里的基线库 `react`）。
+ * 视频交付方式（本机实测后的最终选择）：
+ * 桌面版 GUI（127.0.0.1:19387）**不是** `ctx.webServer` 的路由面——连内核自己的 `/plugins/...`
+ * 都 404，所以"宿主注册 HTTP 路由、页面去取"这条路在桌面版走不通，表现就是"完全没播"。
+ * 现在默认把视频以 data URI 内联在产物里（由 scripts/embed-video.mjs 生成），
+ * 不依赖端口、协议或路由，**一定能播**；`videoSource: 'route'` 仍保留给能走通路由的部署。
  */
+import { TRANSITION_VIDEO_BYTES, TRANSITION_VIDEO_DATA_URI } from './generated/transition-video.js'
 
 /** 注入的 React。只声明用到的成员。 */
 export interface ReactLike {
@@ -23,6 +28,9 @@ export interface ClientConfig {
   buttonLabel: string
   openIn: 'new-tab' | 'same-tab'
   transition: 'video' | 'none'
+  /** `inline` = 用产物里内联的视频（默认，必成功）；`route` = 用宿主 HTTP 路由。 */
+  videoSource: 'inline' | 'route'
+  /** `route` 模式下的视频地址；`inline` 模式忽略。 */
   videoUrl: string
   muted: boolean
   maxWaitMs: number
@@ -34,10 +42,14 @@ export const DEFAULTS: ClientConfig = {
   buttonLabel: '开启生图模式',
   openIn: 'new-tab',
   transition: 'video',
-  videoUrl: '/posterflow-ai/transition.webm',
+  videoSource: 'inline',
+  videoUrl: '',
   muted: true,
   maxWaitMs: 8000,
 }
+
+/** 单次触发闸门的时间窗：这段时间内的重复触发一律忽略。 */
+export const LAUNCH_DEBOUNCE_MS = 1500
 
 /** 侧栏主列表那一行的 id，同时也是 `main` 面板的 key。 */
 export const PANEL_ID = 'posterflow-ai'
@@ -73,12 +85,56 @@ export interface PanelPlugin {
   apply(ctx: ClientContext): void
 }
 
-/** 可替换的副作用实现，便于在 Node 里单测注册契约而不碰 DOM。 */
-export interface PanelRuntime {
-  loadConfig?: () => Promise<ClientConfig>
-  playTransition?: (config: ClientConfig) => Promise<void>
-  openTarget?: (config: ClientConfig) => void
+/** 副作用实现，可在 Node 里替换以便单测。 */
+export interface LaunchRuntime {
+  loadConfig: () => Promise<ClientConfig>
+  playTransition: (config: ClientConfig) => Promise<void>
+  openTarget: (config: ClientConfig) => void
+  /** 可注入的时钟，便于测闸门。 */
+  now?: () => number
 }
+
+/** 一次「过场 → 跳转」的编排，带单次触发闸门。 */
+export interface Launcher {
+  launch(): Promise<void>
+  running(): boolean
+}
+
+/**
+ * 创建编排器。
+ *
+ * 为什么要闸门：React 严格模式下 effect 会跑两次，侧栏那一行的点击也可能被重复派发；
+ * 没有闸门就会**播两遍视频、开两个标签页**（用户报的"出现两次相同的界面"）。
+ * 闸门放在闭包里，组件重新挂载也拦得住。
+ *
+ * @param runtime - 副作用实现（可注入替身）。
+ * @returns 编排器。
+ */
+export function createLauncher(runtime: LaunchRuntime): Launcher {
+  const now = runtime.now ?? ((): number => Date.now())
+  let lastLaunchAt = Number.NEGATIVE_INFINITY
+  let inFlight = false
+
+  return {
+    running: () => inFlight,
+    async launch(): Promise<void> {
+      const at = now()
+      if (inFlight || at - lastLaunchAt < LAUNCH_DEBOUNCE_MS) return
+      inFlight = true
+      lastLaunchAt = at
+      try {
+        const config = await runtime.loadConfig()
+        if (config.transition === 'video') await runtime.playTransition(config)
+        runtime.openTarget(config)
+      } finally {
+        inFlight = false
+      }
+    },
+  }
+}
+
+/** 可覆盖的副作用实现。 */
+export type PanelRuntime = Partial<LaunchRuntime>
 
 interface DomNode {
   style: Record<string, string>
@@ -120,7 +176,7 @@ declare const document: {
 export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}): PanelPlugin {
   let cached: ClientConfig | undefined
 
-  /** 读宿主配置；任何失败都用默认值兜底，绝不因此让入口失灵。 */
+  /** 读宿主配置；任何失败都用默认值兜底（默认可内联视频，所以仍然能播）。 */
   const loadConfig =
     runtime.loadConfig ??
     (async (): Promise<ClientConfig> => {
@@ -148,7 +204,14 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
       if (opened === null || opened === undefined) window.location.assign(config.targetUrl)
     })
 
-  /** 播放过场视频；结束、出错、超时、或用户点击画面都会立刻放行。 */
+  /** 视频地址：默认用内联的 data URI，部署方显式要求 route 时才走宿主路由。 */
+  const videoSourceFor = (config: ClientConfig): string =>
+    config.videoSource === 'route' && config.videoUrl !== '' ? config.videoUrl : TRANSITION_VIDEO_DATA_URI
+
+  /**
+   * 播放过场视频，**铺满整个窗口**。
+   * 结束 / 出错 / 超时 / 点击画面都会立刻放行；绝不把用户卡在过场里。
+   */
   const playTransition =
     runtime.playTransition ??
     ((config: ClientConfig): Promise<void> =>
@@ -175,28 +238,40 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           resolve()
         }
 
-        // muted 必须在 play() 之前设置，否则浏览器会拦下自动播放
-        video.muted = config.muted
+        // 先静音：这是自动播放不被浏览器拦下的唯一可靠保证。
+        // 若配置要求有声，等 'playing' 之后再取消静音——改属性不会触发 play() 拒绝。
+        video.muted = true
         video.autoplay = true
         video.playsInline = true
-        video.src = config.videoUrl
-        Object.assign(video.style, { maxWidth: '100%', maxHeight: '100%' })
+        video.src = videoSourceFor(config)
+        Object.assign(video.style, {
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover', // 铺满窗口，保持比例裁切
+          display: 'block',
+        })
         video.addEventListener('ended', finish)
         video.addEventListener('error', finish)
+        video.addEventListener('playing', () => {
+          if (!config.muted) video.muted = false
+        })
 
         overlay.setAttribute('role', 'presentation')
         overlay.setAttribute('aria-hidden', 'true')
         Object.assign(overlay.style, {
           position: 'fixed',
           inset: '0',
+          width: '100%',
+          height: '100%',
           zIndex: '2147483000',
           background: '#000',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
+          overflow: 'hidden',
           cursor: 'pointer',
         })
-        // 点一下就能跳过，不让用户被过场卡住
+        // 点一下就能跳过
         overlay.addEventListener('click', finish)
         overlay.appendChild(video)
         document.body.appendChild(overlay)
@@ -205,6 +280,13 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         const played = video.play()
         if (played !== undefined && typeof played.catch === 'function') played.catch(finish)
       }))
+
+  const launcher = createLauncher({
+    loadConfig,
+    playTransition,
+    openTarget,
+    ...(runtime.now === undefined ? {} : { now: runtime.now }),
+  })
 
   /**
    * 侧栏那一行只接收**图标**的 owner props（`size` 与 `active`）：
@@ -236,37 +318,22 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
     )
   }
 
-  /**
-   * 主面板：挂载即跑「过场 → 跳转」。
-   * 必须去重——React 严格模式下 effect 会跑两次，不去重会播两遍视频、开两个标签页。
-   */
+  /** 主面板：挂载即启动编排（闸门保证只跑一次）。 */
   const Panel = (): unknown => {
     const [phase, setPhase] = React.useState<'running' | 'done'>('running')
-    const [message, setMessage] = React.useState('正在开启生图模式…')
-    const [targetUrl, setTargetUrl] = React.useState(DEFAULTS.targetUrl)
     const started = React.useRef(false)
 
     React.useEffect(() => {
       if (started.current) return
       started.current = true
-      void (async () => {
-        const config = await loadConfig()
-        setTargetUrl(config.targetUrl)
-        if (config.transition === 'video') {
-          setMessage('过场播放中…（点击画面可跳过）')
-          await playTransition(config)
-        }
-        openTarget(config)
-        setPhase('done')
-        setMessage(`已打开 ${config.targetUrl}`)
-      })()
+      void launcher.launch().then(() => setPhase('done'))
     }, [])
 
     const link = React.createElement(
       'a',
       {
         key: 'manual',
-        href: targetUrl,
+        href: DEFAULTS.targetUrl,
         target: '_blank',
         rel: 'noopener noreferrer',
         style: { color: 'var(--dsw-alias-brand-primary)', textDecoration: 'underline' },
@@ -294,7 +361,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         { key: 'title', style: { fontSize: '15px', color: 'var(--dsw-alias-label-primary)' } },
         phase === 'running' ? '🖼 开启生图模式' : '🖼 已开启',
       ),
-      React.createElement('div', { key: 'message' }, message),
+      React.createElement('div', { key: 'message' }, phase === 'running' ? '正在播放过场…' : '已在新标签页打开 PosterFlow'),
       link,
     )
   }
@@ -319,3 +386,6 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
 
   return { name: 'posterflow-ai', inject: ['slots'], apply }
 }
+
+/** 内联视频的字节数（诊断/测试用）。 */
+export const INLINED_VIDEO_BYTES = TRANSITION_VIDEO_BYTES

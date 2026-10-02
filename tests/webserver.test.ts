@@ -24,6 +24,7 @@ let origin = ''
 
 const baseConfig: Config = {
   targetUrl: 'https://www.posterflow-ai.xyz/',
+  videoSource: 'inline',
   buttonLabel: '开启生图模式',
   openIn: 'new-tab',
   transition: 'video',

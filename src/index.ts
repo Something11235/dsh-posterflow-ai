@@ -46,6 +46,12 @@ export const PANEL_ORDER = 100
 export interface Config {
   /** 过场结束后跳转的地址。 */
   targetUrl: string
+  /**
+   * 视频来源。
+   * `inline`（默认）= 用产物里内联的视频，不依赖端口/路由，**一定能播**；
+   * `route` = 用宿主注册的 HTTP 路由（只有在页面确实由 `ctx.webServer` 提供服务时才有效）。
+   */
+  videoSource: 'inline' | 'route'
   /** 按钮文案。 */
   buttonLabel: string
   /** 跳转方式：新标签页（默认，不会丢掉当前会话界面）或当前标签页。 */
@@ -63,6 +69,7 @@ export interface Config {
 /** Config 的运行时校验 schema。 */
 export const Config: z<Config> = z.object({
   targetUrl: z.string().default('https://www.posterflow-ai.xyz/'),
+  videoSource: z.union([z.const('inline'), z.const('route')]).default('inline'),
   buttonLabel: z.string().default('开启生图模式'),
   openIn: z.union([z.const('new-tab'), z.const('same-tab')]).default('new-tab'),
   transition: z.union([z.const('video'), z.const('none')]).default('video'),

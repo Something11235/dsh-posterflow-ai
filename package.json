@@ -31,7 +31,7 @@
     "assets",
     "cordis.patch.yml",
     "README.md",
-    "README.zh.md",
+    "README.en.md",
     "LICENSE"
   ],
   "license": "MIT",
@@ -56,6 +56,8 @@
     }
   },
   "scripts": {
+    "embed": "node scripts/embed-video.mjs",
+    "verify:embed": "node scripts/embed-video.mjs --check",
     "build": "tsdown",
     "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit",
@@ -65,7 +67,7 @@
     "test:watch": "vitest",
     "test:artifact": "node scripts/verify-artifact.mjs",
     "test:client": "node scripts/verify-client-bundle.mjs lib/client.js",
-    "prepublishOnly": "pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:artifact && pnpm run test:client"
+    "prepublishOnly": "pnpm run verify:embed && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run test:artifact && pnpm run test:client"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",

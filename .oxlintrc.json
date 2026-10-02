@@ -1,0 +1,7 @@
+{
+  "ignorePatterns": [
+    "src/generated/**",
+    "lib/**",
+    "coverage/**"
+  ]
+}

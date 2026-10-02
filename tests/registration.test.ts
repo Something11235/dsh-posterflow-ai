@@ -8,7 +8,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { apply as hostApply, Config, inject as hostInject, name as hostName, PANEL_ID, PANEL_ORDER, SLOT_MAIN, SLOT_PANEL_LIST, type Config as PluginConfig } from '../src/index.js'
-import { createPanelPlugin, DEFAULTS, PANEL_ID as CLIENT_PANEL_ID, type ClientConfig, type ReactLike } from '../src/panels.js'
+import { createPanelPlugin, DEFAULTS, INLINED_VIDEO_BYTES, PANEL_ID as CLIENT_PANEL_ID, type ClientConfig, type ReactLike } from '../src/panels.js'
+import { TRANSITION_VIDEO_DATA_URI } from '../src/generated/transition-video.js'
 
 /** 记录注册行为的最小假 ctx（只实现 client 侧真正用到的面）。 */
 function createFakeContext() {
@@ -124,6 +125,7 @@ describe('插件元数据', () => {
     expect(validated.buttonLabel).toBe('开启生图模式')
     expect(validated.openIn).toBe('new-tab')
     expect(validated.transition).toBe('video')
+    expect(validated.videoSource).toBe('inline') // 默认内联：不依赖端口/路由，一定能播
     expect(validated.videoFile).toBe('assets/transition.webm')
     expect(validated.muted).toBe(true)
     expect(validated.maxWaitMs).toBe(8000)
@@ -134,9 +136,15 @@ describe('插件元数据', () => {
     expect(DEFAULTS.buttonLabel).toBe('开启生图模式')
     expect(DEFAULTS.openIn).toBe('new-tab')
     expect(DEFAULTS.transition).toBe('video')
+    expect(DEFAULTS.videoSource).toBe('inline')
+    expect(DEFAULTS.videoUrl).toBe('') // inline 模式下不使用路由地址
     expect(DEFAULTS.muted).toBe(true)
     expect(DEFAULTS.maxWaitMs).toBe(8000)
-    expect(DEFAULTS.videoUrl).toBe('/posterflow-ai/transition.webm')
+  })
+
+  it('内联视频确实随产物带上了（不是空串）', () => {
+    expect(INLINED_VIDEO_BYTES).toBeGreaterThan(100_000)
+    expect(TRANSITION_VIDEO_DATA_URI.startsWith('data:video/webm;base64,')).toBe(true)
   })
 
   it('client 半边音 / inject 契约', () => {
