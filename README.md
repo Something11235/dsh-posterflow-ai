@@ -5,8 +5,6 @@
 [![npm version](https://img.shields.io/npm/v/dsh-posterflow-ai.svg)](https://www.npmjs.com/package/dsh-posterflow-ai)
 [![license](https://img.shields.io/npm/l/dsh-posterflow-ai.svg)](./LICENSE)
 
-> English: [README.en.md](./README.en.md)
-
 # PosterFlow AI
 
 ## 在线使用
