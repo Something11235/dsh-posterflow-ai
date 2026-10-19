@@ -64,28 +64,6 @@ PosterFlow AI 是一个 AI 图片工作台，把日常生图、参考图修改�
 
 Key 只保存在当前浏览器标签页，不会写入数据库、生成历史或云端图片。关闭标签页后需要重新填写。请只使用可信服务商提供的 HTTPS 接口。
 
-#### 如何获取API Key
-
-下面以 OpenRouter 为例。页面布局和可用支付方式可能随地区、账号及平台更新而变化，请以 OpenRouter 实际页面为准；如果使用其他中转站，请查阅对应服务商的 Key 创建说明。
-
-1. 打开 [OpenRouter](https://openrouter.ai/) 并注册或登录账号。如果网站无法访问，请先检查当前网络环境和浏览器设置。
-2. 进入账户的 `Credits` 页面，点击 `Add Credits`，按页面提示选择金额和支付方式完成充值。创建 Key 本身不一定要求充值，但调用付费模型前需要有可用余额。
-
-![在 OpenRouter Credits 页面添加余额](docs/api-key-guide/openrouter-credits.png)
-
-部分账号可在支付窗口底部开启 `Use one-time payment methods`，再选择页面提供的一次性支付方式。
-
-![在 OpenRouter 购买窗口选择一次性支付方式](docs/api-key-guide/openrouter-purchase.png)
-
-3. 进入 `API Keys` 页面，点击右上角 `New Key`。建议填写便于识别的名称，例如 `PosterFlow AI`，并根据自己的预算设置额度上限或到期时间。
-
-![在 OpenRouter API Keys 页面创建 New Key](docs/api-key-guide/openrouter-api-keys.png)
-
-4. 创建后立即复制并妥善保存 Key。完整 Key 通常只显示一次，不要把它发送给他人，也不要写进截图、README、Issue、聊天记录或前端代码。
-5. 回到 PosterFlow AI，打开“图片服务”，选择 `OpenRouter`，粘贴 Key。OpenRouter 预设会自动填写接口地址和模型；点击“检查配置”，确认无误后再“保存并使用”。
-
-如果 Key 意外泄露，请立即回到 OpenRouter 的 `API Keys` 页面删除或吊销旧 Key，并创建新 Key。建议始终设置合理额度，避免异常调用造成额外费用。
-
 ## 隐私与安全
 
 - 自带 API Key 只保存在浏览器会话中，不上传到数据库。
