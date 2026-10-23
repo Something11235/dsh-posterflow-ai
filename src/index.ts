@@ -54,8 +54,13 @@ export interface Config {
   videoSource: 'inline' | 'route'
   /** 按钮文案。 */
   buttonLabel: string
-  /** 跳转方式：新标签页（默认，不会丢掉当前会话界面）或当前标签页。 */
-  openIn: 'new-tab' | 'same-tab'
+  /**
+   * 打开方式：
+   * - `panel`（默认）= 在 DSH 的**面板里内嵌**打开（iframe），不离开界面
+   * - `browser` = 交给系统默认浏览器（`new-tab` 是历史别名，仍然接受）
+   * - `same-tab` = 当前页导航
+   */
+  openIn: 'panel' | 'browser' | 'same-tab' | 'new-tab'
   /** 是否播放过场视频；设为 `none` 则点击后直接跳转。 */
   transition: 'video' | 'none'
   /** 过场视频在包内的相对路径。 */
@@ -74,7 +79,9 @@ export const Config: z<Config> = z.object({
   targetUrl: z.string().default('https://www.posterflow-ai.xyz/'),
   videoSource: z.union([z.const('inline'), z.const('route')]).default('inline'),
   buttonLabel: z.string().default('开启生图模式'),
-  openIn: z.union([z.const('new-tab'), z.const('same-tab')]).default('new-tab'),
+  openIn: z
+    .union([z.const('panel'), z.const('browser'), z.const('same-tab'), z.const('new-tab')])
+    .default('panel'),
   transition: z.union([z.const('video'), z.const('none')]).default('video'),
   videoFile: z.string().default('assets/transition.webm'),
   muted: z.boolean().default(false),
@@ -189,8 +196,10 @@ export function apply(ctx: Context, config: Config): void {
     )
   }
 
+  const openModeLabel =
+    config.openIn === 'panel' ? '在 DSH 面板内打开' : config.openIn === 'same-tab' ? '当前页跳转' : '浏览器打开'
   ctx.logger.info(
-    `[${name}] 已就绪：按钮「${config.buttonLabel}」→ ${config.openIn === 'new-tab' ? '新标签页打开' : '当前页跳转'} ${config.targetUrl}` +
+    `[${name}] 已就绪：按钮「${config.buttonLabel}」→ ${openModeLabel} ${config.targetUrl}` +
       (videoPath === undefined ? '（无过场视频）' : `（过场视频 ${VIDEO_ROUTE}）`),
   )
 }

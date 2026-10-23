@@ -123,7 +123,7 @@ describe('插件元数据', () => {
     const validated = (Config as unknown as (value: unknown) => PluginConfig)({})
     expect(validated.targetUrl).toBe('https://www.posterflow-ai.xyz/')
     expect(validated.buttonLabel).toBe('开启生图模式')
-    expect(validated.openIn).toBe('new-tab')
+    expect(validated.openIn).toBe('panel')
     expect(validated.transition).toBe('video')
     expect(validated.videoSource).toBe('inline') // 默认内联：不依赖端口/路由，一定能播
     expect(validated.videoFile).toBe('assets/transition.webm')
@@ -134,7 +134,7 @@ describe('插件元数据', () => {
   it('client 半边默认值与宿主默认值一致（兜底时行为不漂移）', () => {
     expect(DEFAULTS.targetUrl).toBe('https://www.posterflow-ai.xyz/')
     expect(DEFAULTS.buttonLabel).toBe('开启生图模式')
-    expect(DEFAULTS.openIn).toBe('new-tab')
+    expect(DEFAULTS.openIn).toBe('panel')
     expect(DEFAULTS.transition).toBe('video')
     expect(DEFAULTS.videoSource).toBe('inline')
     expect(DEFAULTS.videoUrl).toBe('') // inline 模式下不使用路由地址

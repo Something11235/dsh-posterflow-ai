@@ -20,8 +20,8 @@ export interface ClientConfig {
   videoSource: 'inline' | 'route'
   /** 按钮文案。 */
   buttonLabel: string
-  /** 跳转方式。 */
-  openIn: 'new-tab' | 'same-tab'
+  /** 打开方式：`panel` = 在 DSH 面板内嵌打开（默认）；`browser` = 系统浏览器；`same-tab` = 当前页。 */
+  openIn: 'panel' | 'browser' | 'same-tab'
   /** 是否播放过场视频。 */
   transition: 'video' | 'none'
   /** 过场视频地址（由宿主提供的路由）。 */
@@ -123,7 +123,8 @@ export function buildClientConfig(
     targetUrl: string
     videoSource: 'inline' | 'route'
     buttonLabel: string
-    openIn: 'new-tab' | 'same-tab'
+    /** `new-tab` 是 `browser` 的历史别名，这里统一归一化。 */
+    openIn: 'panel' | 'browser' | 'same-tab' | 'new-tab'
     transition: 'video' | 'none'
     muted: boolean
     maxWaitMs: number
@@ -134,7 +135,7 @@ export function buildClientConfig(
     targetUrl: config.targetUrl,
     videoSource: config.videoSource,
     buttonLabel: config.buttonLabel,
-    openIn: config.openIn,
+    openIn: config.openIn === 'new-tab' ? 'browser' : config.openIn,
     transition: config.transition,
     videoUrl,
     muted: config.muted,

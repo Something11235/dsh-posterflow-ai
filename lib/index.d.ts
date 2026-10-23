@@ -31,8 +31,13 @@ export interface Config {
   videoSource: 'inline' | 'route';
   /** 按钮文案。 */
   buttonLabel: string;
-  /** 跳转方式：新标签页（默认，不会丢掉当前会话界面）或当前标签页。 */
-  openIn: 'new-tab' | 'same-tab';
+  /**
+   * 打开方式：
+   * - `panel`（默认）= 在 DSH 的**面板里内嵌**打开（iframe），不离开界面
+   * - `browser` = 交给系统默认浏览器（`new-tab` 是历史别名，仍然接受）
+   * - `same-tab` = 当前页导航
+   */
+  openIn: 'panel' | 'browser' | 'same-tab' | 'new-tab';
   /** 是否播放过场视频；设为 `none` 则点击后直接跳转。 */
   transition: 'video' | 'none';
   /** 过场视频在包内的相对路径。 */

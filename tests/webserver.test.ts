@@ -60,7 +60,7 @@ describe('真实 WebServer 上的路由', () => {
     const payload = (await response.json()) as Record<string, unknown>
     expect(payload.targetUrl).toBe('https://www.posterflow-ai.xyz/')
     expect(payload.buttonLabel).toBe('开启生图模式')
-    expect(payload.openIn).toBe('new-tab')
+    expect(payload.openIn).toBe('browser') // new-tab 是历史别名，载荷里归一化为 browser
     expect(payload.videoUrl).toBe(VIDEO_ROUTE)
   })
 

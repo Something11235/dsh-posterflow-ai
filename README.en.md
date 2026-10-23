@@ -22,7 +22,7 @@ sidebar — below 插件 / 自动化任务, as the last row
   transition animation fills the entire DSH window (object-fit: cover)
   ended / errored / timed out / clicked → continue immediately
         ↓
-  open https://www.posterflow-ai.xyz/ (new tab by default)
+  open https://www.posterflow-ai.xyz/ inside the DSH panel (default; the toolbar can switch to the browser)
 ```
 
 The panel keeps exactly two lines of text: **生图模式已开启** and **手动打开 PosterFlow**. Diagnostics go to the
@@ -91,7 +91,7 @@ replacement, not a deep merge** — omitted fields fall back to their schema def
   config:
     targetUrl: https://www.posterflow-ai.xyz/
     buttonLabel: 开启生图模式
-    openIn: new-tab        # or same-tab
+    openIn: panel          # or browser / same-tab
     transition: video      # or none (navigate immediately)
     videoSource: inline    # or route
     muted: true
@@ -102,7 +102,7 @@ replacement, not a deep merge** — omitted fields fall back to their schema def
 | --- | --- | --- | --- |
 | `targetUrl` | string | `https://www.posterflow-ai.xyz/` | Where to land after the transition |
 | `buttonLabel` | string | `开启生图模式` | Button text |
-| `openIn` | `new-tab` \| `same-tab` | `new-tab` | New tab (keeps your session UI) or navigate away |
+| `openIn` | `panel` \| `browser` \| `same-tab` | `panel` | `panel` = render the site in a DSH panel via **iframe** (stays inside the app; the toolbar can switch to the browser or close); `browser` = the system default browser (`new-tab` is a legacy alias); `same-tab` = navigate the current page |
 | `transition` | `video` \| `none` | `video` | Play the transition clip |
 | `videoSource` | `inline` \| `route` | `inline` | `inline` = the video inlined in the bundle (**always plays**); `route` = the host HTTP route (only when the page is actually served by `ctx.webServer`) |
 | `videoFile` | string | `assets/transition.webm` | Package-internal file used in `route` mode |
@@ -178,7 +178,7 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
 | `verify:embed` | The inlined video module matches `assets/transition.webm` (catches “changed the clip, forgot to regenerate”) |
 | `typecheck` | Strict TS, including the client half's lazy-CJS shape |
 | `lint` | oxlint (the generated video module is excluded) |
-| `test` | **55 cases** across six files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the panel UI (exactly two lines), launch de-duplication (20 s window / in-flight / diagnostics / audio verdict), window opening (exactly once, `null` never navigates), and a **real WebServer with real HTTP requests** |
+| `test` | **56 cases** across six files: pure logic (Range parsing, path-escape guard), the registration contract (last row + matching main panel), the panel UI (exactly two lines), launch de-duplication (20 s window / in-flight / diagnostics / audio verdict), window opening (exactly once, `null` never navigates), and a **real WebServer with real HTTP requests** |
 | `build` | tsdown → `lib/index.js` (ESM) + `lib/client.js` (IIFE plain script, ≈ 659 KB) |
 | `test:artifact` | The built host artefact mounted on a real WebServer: routes answer, and vanish on dispose |
 | `test:client` | Executes the built `lib/client.js` in Node: **0 module requests and 0 DOM mutations at execution** (the lazy contract), and `name/inject/apply` after materialization |
@@ -190,8 +190,10 @@ pnpm run test:client     # browser artefact: lazy-CJS contract (pure Node, no br
   changes can go live.
 - **The clip is inlined at build time** — replace `assets/transition.webm`, run `pnpm run embed`, rebuild
   (`verify:embed` fails CI if you forget).
-- **The redirect opens the external browser** (new tab by default). Opening it in DSH's built-in browser needs
-  the `sidebarRightTabs` service contract, which that package does not publish types for — **not implemented**.
+- **Inline mode (`openIn: panel`, the default) uses the plugin's own iframe**, so the target site must **allow
+  being framed** (no `X-Frame-Options` and no restrictive CSP `frame-ancestors`). PosterFlow currently sends
+  neither ✅; if a site refuses framing the panel shows a blank frame — use “在浏览器打开” in the toolbar then.
+  This deliberately does not use the `sidebarRightTabs` built-in browser panel, whose package ships no types.
 - The entry sits at the **last row** of the sidebar list (`PANEL_ORDER = 100`). Change that order to move it, or
   switch to a button-style slot such as `sidebar.footer.action` (then only one registration is needed).
 

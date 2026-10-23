@@ -31,7 +31,13 @@ export interface ReactLike {
 export interface ClientConfig {
   targetUrl: string
   buttonLabel: string
-  openIn: 'new-tab' | 'same-tab'
+  /**
+   * 打开方式：
+   * - `panel`（默认）：在 DSH 的**面板里内嵌**打开（iframe），面板顶部有「在浏览器打开 / 关闭」
+   * - `browser`：交给系统默认浏览器（`new-tab` 是它的历史别名）
+   * - `same-tab`：当前页导航
+   */
+  openIn: 'panel' | 'browser' | 'same-tab' | 'new-tab'
   transition: 'video' | 'none'
   /** `inline` = 用产物里内联的视频（默认，必成功）；`route` = 用宿主 HTTP 路由。 */
   videoSource: 'inline' | 'route'
@@ -45,7 +51,7 @@ export interface ClientConfig {
 export const DEFAULTS: ClientConfig = {
   targetUrl: 'https://www.posterflow-ai.xyz/',
   buttonLabel: '开启生图模式',
-  openIn: 'new-tab',
+  openIn: 'panel',
   transition: 'video',
   videoSource: 'inline',
   videoUrl: '',
@@ -125,10 +131,15 @@ export interface PanelPlugin {
 
 /** 一次跳转尝试的结果。 */
 export interface OpenOutcome {
-  /** `opened` = 拿到了窗口句柄；`blocked` = 宿主/浏览器拦下；`same-tab` = 当前页导航。 */
-  kind: 'opened' | 'blocked' | 'same-tab'
+  /**
+   * `panel` = 在 DSH 面板内嵌打开（不碰窗口）；`opened` = 拿到了窗口句柄；
+   * `blocked` = 宿主/浏览器拦下；`same-tab` = 当前页导航。
+   */
+  kind: 'opened' | 'blocked' | 'same-tab' | 'panel'
   /** 是否拿到窗口句柄。DSH 桌面版**永远**是 false（宿主 deny + openExternal）。 */
   handleReturned: boolean
+  /** 本次实际要打开的地址（面板内嵌与手动链接都用它）。 */
+  url?: string
 }
 
 /** 过场播放的声音判定（只在**出问题时**由面板显示一句原因）。 */
@@ -207,34 +218,40 @@ export interface WindowLike {
 }
 
 /**
- * 创建「跳转」实现。
+ * 创建「打开目标」实现。
  *
- * **关键：`null` 不是"失败"，也不该降级导航。** 在 DSH 桌面版里，
- * Electron 主进程对任何 `window.open` 都返回 `deny` 并顺手 `shell.openExternal(url)`，
- * 所以这里必然拿到 `null`，而网站**已经被打开过一次**。此时若再 `location.assign()`，
- * 就会出现"打开两次"（新标签页 + 当前页）。
- *
- * 因此：`new-tab` 路径**只调用一次 `window.open`**，拿到 `null` 就返回 `blocked`，
- * 由面板提示用户点手动链接；只有显式的 `same-tab` 配置才会导航当前页。
+ * 三种模式：
+ * - **`panel`（默认）**：返回 `{kind:'panel'}`，由面板自己渲染 iframe 内嵌打开，
+ *   鼠标焦点不离开 DSH；面板顶部再给「在浏览器打开」按钮，用户可以随时切到浏览器。
+ * - `browser`（历史别名 `new-tab`）：**只调用一次 `window.open`**。
+ *   DSH 桌面版的 Electron 主进程对任何 `window.open` 都 `deny` 并顺手 `shell.openExternal(url)`，
+ *   所以这里必然拿到 `null`，而网站**已经被打开过一次**；此时若再 `location.assign()` 就会出现
+ *   "打开两次"，因此 `null` 只记为 `blocked`，**绝不自动导航**。
+ * - `same-tab`：显式要求时才导航当前页。
  *
  * @param win - 窗口对象（默认 `window`）。
- * @returns 跳转函数。
+ * @returns 打开函数。
  */
 export function createOpenTarget(win: WindowLike): (config: ClientConfig) => OpenOutcome {
   return (config: ClientConfig): OpenOutcome => {
-    if (config.openIn === 'same-tab') {
-      win.location.assign(config.targetUrl)
-      return { kind: 'same-tab', handleReturned: false }
+    const mode = config.openIn === 'new-tab' ? 'browser' : config.openIn
+    const url = config.targetUrl
+
+    if (mode === 'panel') {
+      // 交给面板渲染 iframe：不碰窗口、不打开任何外部程序
+      return { kind: 'panel', handleReturned: false, url }
     }
 
-    const opened = win.open(config.targetUrl, WINDOW_NAME) as
-      | { opener?: unknown; focus?: () => void }
-      | null
-      | undefined
+    if (mode === 'same-tab') {
+      win.location.assign(url)
+      return { kind: 'same-tab', handleReturned: false, url }
+    }
+
+    const opened = win.open(url, WINDOW_NAME) as { opener?: unknown; focus?: () => void } | null | undefined
 
     if (opened === null || opened === undefined) {
       // 不导航！宿主很可能已经打开过了（见函数注释）
-      return { kind: 'blocked', handleReturned: false }
+      return { kind: 'blocked', handleReturned: false, url }
     }
 
     try {
@@ -247,7 +264,7 @@ export function createOpenTarget(win: WindowLike): (config: ClientConfig) => Ope
     } catch {
       /* 忽略 */
     }
-    return { kind: 'opened', handleReturned: true }
+    return { kind: 'opened', handleReturned: true, url }
   }
 }
 
@@ -620,15 +637,30 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
     )
   }
 
+  /** 面板顶部工具栏按钮样式。 */
+  const toolbarButtonStyle = {
+    padding: '4px 10px',
+    fontSize: '12px',
+    color: 'var(--dsw-alias-label-primary)',
+    background: 'transparent',
+    border: '1px solid var(--dsw-alias-border-secondary)',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  }
+
   /**
    * 主面板：挂载即启动编排（共享闸门保证一次点击只跑一次）。
    *
-   * UI 上**只保留两行**：标题 + 手动链接。诊断计数改为只写 `console`，
-   * 需要时在 DSH 窗口按 Ctrl+Shift+I 看 `[posterflow-ai]` 即可。
+   * - **`openIn: panel`（默认）**：过场结束后在**面板内**用 iframe 打开站点，
+   *   顶部工具栏提供「在浏览器打开」与「关闭」——用户随时可以自选切到浏览器。
+   * - 其他模式：仍是原来那两行（标题 + 手动链接）。
+   * 诊断计数只写 `console`（`Ctrl+Shift+I` 过滤 `[posterflow-ai]`）。
    */
   const Panel = (): unknown => {
     diagnostics.panelRenders += 1
     const [suffix, setSuffix] = React.useState('')
+    const [view, setView] = React.useState<'idle' | 'web'>('idle')
+    const [target, setTarget] = React.useState<string>(DEFAULTS.targetUrl)
     const started = React.useRef(false)
 
     React.useEffect(() => {
@@ -640,8 +672,75 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         // 只在**真的出问题**时追加一句原因；正常情况下标题就是「生图模式已开启」
         if (outcome.audio === 'muted') setSuffix('（无声音：浏览器要求先交互一次）')
         else if (outcome.audio === 'undecoded') setSuffix('（音轨未解码）')
+        // panel 模式：过场结束后在面板内嵌打开
+        if (outcome.ran && outcome.open?.kind === 'panel') {
+          if (outcome.open.url !== undefined) setTarget(outcome.open.url)
+          setView('web')
+        }
       })
     }, [])
+
+    if (view === 'web') {
+      const openInBrowser = (): void => {
+        const outcome = openTarget({ ...DEFAULTS, targetUrl: target, openIn: 'browser' })
+        if (outcome.kind === 'blocked') setSuffix('（浏览器拦了新窗口，请点下面的链接）')
+        else setSuffix('')
+      }
+      return React.createElement(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: '320px' } },
+        React.createElement(
+          'div',
+          {
+            key: 'bar',
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '6px 10px',
+              borderBottom: '1px solid var(--dsw-alias-border-secondary)',
+            },
+          },
+          React.createElement(
+            'span',
+            {
+              key: 'url',
+              title: target,
+              style: {
+                flex: '1',
+                fontSize: '12px',
+                color: 'var(--dsw-alias-label-secondary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              },
+            },
+            target,
+          ),
+          suffix !== ''
+            ? React.createElement('span', { key: 'suffix', style: { fontSize: '11px', opacity: '0.7' } }, suffix)
+            : null,
+          React.createElement(
+            'button',
+            { key: 'browser', type: 'button', onClick: openInBrowser, style: toolbarButtonStyle },
+            '在浏览器打开',
+          ),
+          React.createElement(
+            'button',
+            { key: 'close', type: 'button', onClick: () => setView('idle'), style: toolbarButtonStyle },
+            '关闭',
+          ),
+        ),
+        React.createElement('iframe', {
+          key: 'web',
+          src: target,
+          title: 'PosterFlow',
+          allow: 'clipboard-read; clipboard-write; fullscreen',
+          referrerPolicy: 'no-referrer-when-downgrade',
+          style: { flex: '1', width: '100%', minHeight: '280px', border: '0', background: '#fff' },
+        }),
+      )
+    }
 
     return React.createElement(
       'div',
@@ -667,7 +766,7 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
         'a',
         {
           key: 'manual',
-          href: DEFAULTS.targetUrl,
+          href: target,
           target: '_blank',
           rel: 'noopener noreferrer',
           style: { color: 'var(--dsw-alias-brand-primary)', textDecoration: 'underline' },

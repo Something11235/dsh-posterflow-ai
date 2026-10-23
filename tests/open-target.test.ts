@@ -21,9 +21,21 @@ function makeWindow(openResult: unknown) {
   return { win, assign, open }
 }
 
-const config: ClientConfig = { ...DEFAULTS }
+/** 浏览器模式的基准配置（默认值现在是 panel，所以显式指定 browser 来测开窗逻辑）。 */
+const config: ClientConfig = { ...DEFAULTS, openIn: 'browser' }
 
 describe('createOpenTarget', () => {
+  it('panel（默认）：完全不碰窗口，返回 kind=panel 让面板内嵌渲染', () => {
+    const { win, open, assign } = makeWindow({ opener: {}, focus: vi.fn() })
+
+    const outcome = createOpenTarget(win)({ ...DEFAULTS })
+
+    expect(open).not.toHaveBeenCalled()
+    expect(assign).not.toHaveBeenCalled()
+    expect(outcome.kind).toBe('panel')
+    expect(outcome.url).toBe(DEFAULTS.targetUrl)
+  })
+
   it('new-tab：只用具名窗口调用一次 window.open，且不写 noopener features', () => {
     const opened = { opener: {}, focus: vi.fn() }
     const { win, open, assign } = makeWindow(opened)
@@ -35,7 +47,7 @@ describe('createOpenTarget', () => {
     // 只传两个参数：把 noopener 写进 features 会让 window.open 必返回 null
     expect((open.mock.calls[0] as unknown[]).length).toBe(2)
     expect(assign).not.toHaveBeenCalled()
-    expect(outcome).toEqual({ kind: 'opened', handleReturned: true })
+    expect(outcome).toEqual({ kind: 'opened', handleReturned: true, url: config.targetUrl })
   })
 
   it('拿到句柄后手动清 opener（等价 noopener 的安全性）', () => {
@@ -54,7 +66,7 @@ describe('createOpenTarget', () => {
 
     expect(open).toHaveBeenCalledTimes(1)
     expect(assign).not.toHaveBeenCalled() // ← 这条就是"打开两次"的修复
-    expect(outcome).toEqual({ kind: 'blocked', handleReturned: false })
+    expect(outcome).toEqual({ kind: 'blocked', handleReturned: false, url: config.targetUrl })
   })
 
   it('undefined 同样按 blocked 处理，不导航', () => {
@@ -73,7 +85,7 @@ describe('createOpenTarget', () => {
 
     expect(open).not.toHaveBeenCalled()
     expect(assign).toHaveBeenCalledWith(config.targetUrl)
-    expect(outcome).toEqual({ kind: 'same-tab', handleReturned: false })
+    expect(outcome).toEqual({ kind: 'same-tab', handleReturned: false, url: config.targetUrl })
   })
 
   it('opener 不可写（冻结/跨源）时不影响流程', () => {
