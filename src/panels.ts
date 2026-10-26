@@ -649,6 +649,13 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
   }
 
   /**
+   * 面板的"上次视图"。**必须放在组件外**：面板切走再切回会重新挂载，
+   * 组件内 state 会被重置回 idle —— 那正是"切回来变回未打开"的原因。
+   */
+  let lastView: 'idle' | 'web' = 'idle'
+  let lastTarget: string = DEFAULTS.targetUrl
+
+  /**
    * 主面板：挂载即启动编排（共享闸门保证一次点击只跑一次）。
    *
    * - **`openIn: panel`（默认）**：过场结束后在**面板内**用 iframe 打开站点，
@@ -659,25 +666,38 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
   const Panel = (): unknown => {
     diagnostics.panelRenders += 1
     const [suffix, setSuffix] = React.useState('')
-    const [view, setView] = React.useState<'idle' | 'web'>('idle')
-    const [target, setTarget] = React.useState<string>(DEFAULTS.targetUrl)
+    // 用跨挂载保留的值做初值：切走再切回时直接恢复上次的视图
+    const [view, setView] = React.useState<'idle' | 'web'>(lastView)
+    const [target, setTarget] = React.useState<string>(lastTarget)
     const started = React.useRef(false)
+
+    /** 处理一次 launch 的结果；panel 模式把视图持久化到 lastView/lastTarget。 */
+    const applyOutcome = (outcome: LaunchOutcome): void => {
+      console.log('[posterflow-ai] launch outcome', outcome, diagnostics)
+      // 只在**真的出问题**时追加一句原因；正常情况下标题就是「生图模式已开启」
+      if (outcome.audio === 'muted') setSuffix('（无声音：浏览器要求先交互一次）')
+      else if (outcome.audio === 'undecoded') setSuffix('（音轨未解码）')
+      // panel 模式：过场结束后在面板内嵌打开，并记住这个状态
+      if (outcome.ran && outcome.open?.kind === 'panel') {
+        const url = outcome.open.url ?? DEFAULTS.targetUrl
+        lastView = 'web'
+        lastTarget = url
+        setTarget(url)
+        setView('web')
+      }
+    }
 
     React.useEffect(() => {
       diagnostics.effects += 1
       if (started.current) return
       started.current = true
-      void launcher.launch().then((outcome) => {
-        console.log('[posterflow-ai] launch outcome', outcome, diagnostics)
-        // 只在**真的出问题**时追加一句原因；正常情况下标题就是「生图模式已开启」
-        if (outcome.audio === 'muted') setSuffix('（无声音：浏览器要求先交互一次）')
-        else if (outcome.audio === 'undecoded') setSuffix('（音轨未解码）')
-        // panel 模式：过场结束后在面板内嵌打开
-        if (outcome.ran && outcome.open?.kind === 'panel') {
-          if (outcome.open.url !== undefined) setTarget(outcome.open.url)
-          setView('web')
-        }
-      })
+      // 切走再切回导致的重新挂载：恢复上次视图，**不重放过场**
+      if (lastView === 'web') {
+        setView('web')
+        setTarget(lastTarget)
+        return
+      }
+      void launcher.launch().then(applyOutcome)
     }, [])
 
     if (view === 'web') {
@@ -727,7 +747,15 @@ export function createPanelPlugin(React: ReactLike, runtime: PanelRuntime = {}):
           ),
           React.createElement(
             'button',
-            { key: 'close', type: 'button', onClick: () => setView('idle'), style: toolbarButtonStyle },
+            {
+              key: 'close',
+              type: 'button',
+              onClick: () => {
+                lastView = 'idle'
+                setView('idle')
+              },
+              style: toolbarButtonStyle,
+            },
             '关闭',
           ),
         ),
