@@ -50,15 +50,19 @@ jobs:
       - name: Verify built artifact
         run: pnpm run test:artifact
 
-      # 本模板选择把 lib/ 提交进仓库；产物与源码不一致必须硬失败
+      # 本模板选择把 lib/ 提交进仓库；产物与源码不一致必须硬失败。
+      # 但 *.map 只是 sourcemap（内嵌 sourcesContent），不同 Node 版本重建后
+      # 字节可能不同，且运行时不加载它 —— 所以只对真正的代码/类型产物严格比对。
       - name: Fail if committed build output is stale
         if: matrix.node == '24'
         run: |
-          if [ -n "$(git status --porcelain -- lib)" ]; then
+          changed="$(git status --porcelain -- lib | grep -vE '\.map$' || true)"
+          if [ -n "$changed" ]; then
             echo "::error::lib/ 与 src/ 不同步，请在本地跑 pnpm run build 并提交"
-            git status --short -- lib
+            echo "$changed"
             exit 1
           fi
+          echo "lib/*.js 与 *.d.ts 与 src/ 一致（*.map 的字节差异已忽略）"
 
       # 把 files 白名单漏项变成硬失败（漏了 cordis.patch.yml 会静默装不上）
       - name: Verify published file set
